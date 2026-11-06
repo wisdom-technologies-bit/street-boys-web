@@ -8,6 +8,31 @@ import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 const eslintConfig = [
   ...nextCoreWebVitals,
   {
+    /**
+     * `x-forwarded-for` is a client-controlled header, so exactly one module is
+     * allowed to read it (src/server/http/client-ip.ts, which applies
+     * TRUSTED_PROXY_HOPS). Anywhere else it is a lint error rather than a code
+     * review comment somebody might miss.
+     */
+    files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['src/server/http/client-ip.ts', 'src/server/http/client-ip.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "Literal[value=/x-forwarded-for/i]",
+          message:
+            'Read the client IP through src/server/http/client-ip.ts, which applies TRUSTED_PROXY_HOPS. Never read x-forwarded-for directly.',
+        },
+        {
+          selector: "TemplateElement[value.raw=/x-forwarded-for/i]",
+          message:
+            'Read the client IP through src/server/http/client-ip.ts, which applies TRUSTED_PROXY_HOPS. Never read x-forwarded-for directly.',
+        },
+      ],
+    },
+  },
+  {
     ignores: [
       '.next/**',
       'node_modules/**',
