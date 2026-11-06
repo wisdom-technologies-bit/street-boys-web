@@ -15,6 +15,11 @@ coverage/
 .env
 .env.*
 !.env.example
+.envrc
+*.pem
+*.key
+*.p12
+.secrets/
 
 # editor and OS
 .DS_Store

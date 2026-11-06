@@ -97,6 +97,39 @@ jobs:
         run: npm run build
 ```
 
+## Secret scanning (paste this into the workflow)
+
+A credential once reached `package.json` in this repository. Removing it does not remove it from history, so CI now needs to fail the build when a secret appears in a **new** commit. This job is deliberately separate from the main `verify` job: it runs on the whole history, and it is fast, so it reports first.
+
+Add it to `.github/workflows/ci.yml` as a second job (adjust the indentation to match the file):
+
+```yaml
+secrets:
+  name: secret scan
+  runs-on: ubuntu-latest
+  timeout-minutes: 10
+  permissions:
+    contents: read
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        # Full history: a secret in an old commit is still a live secret.
+        fetch-depth: 0
+
+    - name: gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+Notes for the owner:
+
+- `fetch-depth: 0` matters. With the default shallow clone, gitleaks only sees the last commit and reports a clean history that is not clean.
+- The job **fails the build** on a finding. Do not add `continue-on-error`: a red build is the point.
+- To scan the history once, before enabling it, run `gitleaks detect --source . --redact --verbose` locally and read the **path and line** it reports. Never paste a finding's value anywhere.
+- Add `.gitleaks.toml` only to allow-list a **known false positive**, with a comment saying which rule and why. Never to allow-list a real key.
+
 ## What it runs
 
 Install, lint, typecheck, unit tests, database tests against a real Postgres service

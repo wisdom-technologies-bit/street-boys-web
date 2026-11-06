@@ -70,6 +70,21 @@ Names only in the repository; values only in the platform's environment settings
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.
 
+## Secrets
+
+**No credential ever enters this repository.** Not in code, not in a config file, not in `package.json`, not in a URL, not in a doc, not in a commit message, not in a prompt to an agent.
+
+| Rule                           | Detail                                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Environment variables only** | `DATABASE_URL`, `CRON_SECRET`, `OTP_PEPPER`, `BREVO_API_KEY` and friends are read from the environment. `.env.example` lists the **names** with empty or obviously fake values                                |
+| **Never in a URL**             | A URL like `https://user:token@github.com/...` writes the credential into `package.json`, `.git/config`, a lockfile, a log line and every clone. Use the plain URL and let the platform supply the credential |
+| **Never printed**              | No agent, script or person prints, echoes, pastes or logs a secret value. Refer to it by **file path and line number** only. A value pasted into a chat, an issue or a screenshot is a leaked value           |
+| **If you find one: stop**      | Do not paste it, do not commit around it, do not rewrite history. Tell the owner, say where it is by path and line, and let them rotate it                                                                    |
+| **Rotation is the fix**        | Removing a secret from the working tree does not remove it from history. **Rotating the credential is what actually ends the exposure**; history cleanup is a separate, deliberate decision                   |
+| **Scanning**                   | `gitleaks` runs in CI on every push and pull request. The job is in `CI.md`, ready to paste into the workflow                                                                                                 |
+
+Local `.env*` files are gitignored (`.env.example` is the one exception). Secrets live in the platform's environment settings, never in this repository.
+
 ## Branch and pull request rules
 
 - **Never push to `main`.** Every change reaches `main` through a pull request.
