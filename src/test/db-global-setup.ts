@@ -22,6 +22,11 @@ export default async function setup(): Promise<void> {
 
   const pool = new Pool({ connectionString: url, max: 1 });
   try {
+    // Drop Drizzle's bookkeeping schema too. It records which migrations have run,
+    // and it lives outside `public`, so dropping only `public` leaves it claiming
+    // migration 0000 is applied while the tables it created are gone. The next run
+    // then migrates nothing and every test fails on a table that should exist.
+    await pool.query('drop schema if exists drizzle cascade');
     await pool.query('drop schema if exists public cascade');
     await pool.query('create schema public');
     await migrate(drizzle(pool), { migrationsFolder: './drizzle' });

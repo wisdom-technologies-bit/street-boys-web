@@ -25,17 +25,17 @@ If the task conflicts with a decision, or needs a number that is not in docs/14,
 
 ## 3. The stack, exactly
 
-| Concern | Choice | Notes |
-|---|---|---|
-| Framework | Next.js, **App Router** | No Pages Router. Server Components by default |
-| Language | TypeScript, **`strict: true`** | `any` is not a solution. `unknown` plus Zod is |
-| Database | Postgres on **Neon** | One database. No second store |
-| ORM | **Drizzle** | SQL migrations only. No `drizzle-kit push` against a shared database, no second ORM |
-| Validation | **Zod** | Every external input: body, query, params, webhooks |
-| Tests | **Vitest** | Unit and integration, in that order of preference |
-| Lint | **ESLint** | Configured once, obeyed |
-| CI | **GitHub Actions** | lint → typecheck → test on every PR |
-| Hosting | **Vercel** | Preview deployment per PR |
+| Concern    | Choice                         | Notes                                                                               |
+| ---------- | ------------------------------ | ----------------------------------------------------------------------------------- |
+| Framework  | Next.js, **App Router**        | No Pages Router. Server Components by default                                       |
+| Language   | TypeScript, **`strict: true`** | `any` is not a solution. `unknown` plus Zod is                                      |
+| Database   | Postgres on **Neon**           | One database. No second store                                                       |
+| ORM        | **Drizzle**                    | SQL migrations only. No `drizzle-kit push` against a shared database, no second ORM |
+| Validation | **Zod**                        | Every external input: body, query, params, webhooks                                 |
+| Tests      | **Vitest**                     | Unit and integration, in that order of preference                                   |
+| Lint       | **ESLint**                     | Configured once, obeyed                                                             |
+| CI         | **GitHub Actions**             | lint → typecheck → test on every PR                                                 |
+| Hosting    | **Vercel**                     | Preview deployment per PR                                                           |
 
 ### Prohibited here
 
@@ -99,13 +99,13 @@ Every PR that touches the ledger includes all four, passing:
 
 ## 5. Server authority
 
-| Feature | Server computes | Client sends |
-|---|---|---|
-| Job pay | The amount, after energy, diminishing returns, skill and any multiplier | "work this shift" |
-| Haggle | NPC limits, patience, whether the offer is accepted | the offer |
-| Arrest, fine, jail | Everything | nothing |
-| Corruption, leakage, projects | Everything | nothing |
-| Price checks | The price from config | the item |
+| Feature                       | Server computes                                                         | Client sends      |
+| ----------------------------- | ----------------------------------------------------------------------- | ----------------- |
+| Job pay                       | The amount, after energy, diminishing returns, skill and any multiplier | "work this shift" |
+| Haggle                        | NPC limits, patience, whether the offer is accepted                     | the offer         |
+| Arrest, fine, jail            | Everything                                                              | nothing           |
+| Corruption, leakage, projects | Everything                                                              | nothing           |
+| Price checks                  | The price from config                                                   | the item          |
 
 - **Never trust an amount from the client.** If a request body contains a `price`, `amount` or `total` that the server then uses, that is a bug — even if the server "checks" it.
 - **Never send hidden data to the client.** NPC hidden limits, patience meters, corruption level, police presence, hidden stock, and any roll the player should not see stay server-side. Not in a JSON payload, not in a `data-` attribute, not in a debug field.
@@ -127,7 +127,7 @@ Every PR that touches the ledger includes all four, passing:
 - **Rate-limit** login and OTP, transfers, haggle actions, marketplace listings and anything a script would farm. Fail closed.
 - **Verify Paystack webhook signatures** before parsing the body. **Make webhook handling idempotent** — Paystack retries, and the retry must not credit twice.
 - **Parameterized queries only.** Drizzle's builder or tagged SQL. No string concatenation.
-- **No secrets in the repo.** Environment variables only; `.env.example` holds placeholder names.
+- **No secrets in the repo.** Environment variables only; `.env.example` holds placeholder names. **Never in a URL, never printed, never pasted. See section 13, which is non-negotiable.**
 - **No personal data in logs.** No phone numbers, names, OTPs, tokens or full request bodies.
 - **Audit log** every money action, admin action and moderation action.
 - **NDPA:** collect the minimum personal data the game needs, hold it only as long as needed.
@@ -140,10 +140,10 @@ Every PR that touches the ledger includes all four, passing:
 
 ## 9. Review levels for this repository
 
-| Level | Examples here |
-|---|---|
-| **L1** | Screen layout, styling, copy, a display-only component |
-| **L2** | Jobs engine, haggle engine, property, groups, police, clock, profile |
+| Level  | Examples here                                                                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L1** | Screen layout, styling, copy, a display-only component                                                                                                        |
+| **L2** | Jobs engine, haggle engine, property, groups, police, clock, profile                                                                                          |
 | **L3** | **`src/server/ledger/**`, transfers, auth and OTP, payments and webhooks, migrations, admin tools, the config loader and any change to an economy parameter** |
 
 Unsure between L2 and L3? It is L3. An L3 pull request is opened, labelled `needs-owner-review`, explained, and **left open**. The agent does not merge it.
@@ -171,3 +171,27 @@ Unsure between L2 and L3? It is L3. An L3 pull request is opened, labelled `need
 Stop when: the task conflicts with a `D-###` decision; a number is missing from docs/14; the task depends on a question in docs/13; the work turns out to need an L3 change the task did not mention; two docs disagree; or you would have to invent something to continue.
 
 One clear question beats an invented answer.
+
+## 13. Secrets (non-negotiable)
+
+A credential is a key to the owner's accounts. One pasted token in a public place can cost money, data or the whole repository.
+
+| Rule                                                | Detail                                                                                                                                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Never in a URL**                                  | `https://user:token@host/...` writes the secret into `package.json`, `.git/config`, lockfiles, logs and every clone. This repository has already been bitten by exactly this. Use the plain URL |
+| **Never in code, docs, prompts or commit messages** | Not in a string, a comment, a fixture, a README example, a PR description, a task you hand an agent, or a commit message                                                                        |
+| **Environment variables only**                      | Names in `.env.example` (empty or obviously fake), values in the platform's environment settings                                                                                                |
+| **An agent never prints a secret**                  | No `echo`, no `cat`, no debugging output, no exception message. Refer to it as **file path and line number**                                                                                    |
+| **If you find one: stop**                           | Say where it is by path and line, never the value. Do not commit, do not push, do not rewrite history. The owner rotates it                                                                     |
+| **Removing it is not enough**                       | A removed secret is still in history and still valid until it is rotated. **Rotation is the fix**; history rewriting is a separate decision the owner makes deliberately                        |
+| **Scan before you push**                            | `gitleaks` runs in CI. If CI reports a finding, the push is not done                                                                                                                            |
+
+## 14. Working in small steps
+
+The work is larger than one session, and a session can end without warning. Plan for that.
+
+- **Commit and push after every milestone.** A milestone is something that works and would survive a revert, not a half-finished edit.
+- **Keep each task small.** One feature, one branch, one pull request. If a task is growing past what one session can finish, cut it and say so.
+- **Running low on tools or time? Stop at a clean commit.** Then list the remaining work in the pull request description. Never leave uncommitted changes behind and never leave the branch in a state that does not build.
+- **Never leave a half-applied migration.** A schema that is migrated but not deployed, or deployed but not migrated, is worse than no deploy.
+- **Say what is done and what is not.** "Configured but not verified" is an honest status; "working" is a claim that needs evidence.

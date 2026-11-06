@@ -1,7 +1,7 @@
 {
   "name": "street-boys-web",
   "version": "0.1.0",
-  "description": "Street Boys — browser-based Nigerian street-life simulation. Foundation only: no game features yet.",
+  "description": "Street Boys \u2014 browser-based Nigerian street-life simulation. Foundation only: no game features yet.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,10 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://x-access-token: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@github.com/wisdom-technologies-bit/street-boys-web.git"
-  },
+  "repository": "https://github.com/wisdom-technologies-bit/street-boys-web",
   "bugs": {
     "url": "https://github.com/wisdom-technologies-bit/street-boys-web/issues"
   },
