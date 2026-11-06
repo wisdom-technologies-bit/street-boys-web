@@ -1,45 +1,23 @@
 # CI
 
-## Read this first: the workflow file is wrong right now
+## Status
 
-`.github/workflows/ci.yml` currently contains **this document** (the markdown and the
-fenced block), not the workflow. Every run on every branch fails at startup with zero
-jobs, including on `main`, because GitHub cannot parse it as a workflow.
+`.github/workflows/ci.yml` is the workflow and it is committed. It runs two jobs on every
+pull request and every push to `main`:
 
-Fix: delete everything in `.github/workflows/ci.yml`, paste **only** the YAML block from
-the section `## ci.yml` below (the lines between the fences, without the fences), and
-commit. The agent cannot do it: the connection still lacks the `workflow` scope, and
-GitHub refuses the push with
+| Job       | What it proves                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `verify`  | install, lint, typecheck, unit tests, database tests against a real Postgres service container, production build |
+| `secrets` | gitleaks over the **full history**, because a credential in an old commit is still a live credential             |
 
-```
-refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope
-```
+Keep the two files separate in your head: **this document explains the workflow, the
+`.yml` file is the workflow.** A previous version of `ci.yml` contained this markdown by
+mistake, which made every run fail at startup with zero jobs. If that ever happens again,
+the symptom is a run with no jobs and no logs.
 
-Until that paste happens, CI is red on every PR for a reason that has nothing to do with
-the code under review.
-
-**Purpose:** The CI workflow that must run on every pull request and every push to `main`, and the exact contents of its file.
-**Status:** Defined here and running, but broken until the owner pastes the YAML into the workflow file (see above).
-
-## Why this README exists
-
-`ci.yml` could not be pushed from the agent's GitHub connection. The connected OAuth app
-holds only the `repo` scope, and GitHub refuses any write to a workflow file without the
-`workflow` scope:
-
-```
-refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope
-```
-
-Nothing was worked around. The exact workflow is kept below, in full, so that it is
-reviewable in this pull request.
-
-## To switch CI on, either
-
-1. Reconnect the GitHub account with the **workflow** scope (Settings → connected accounts → GitHub → grant `workflow`), then move the block below into `.github/workflows/ci.yml`; or
-2. Save the block below as `.github/workflows/ci.yml` yourself and push it.
-
-Then confirm the `name: CI` workflow appears under the Actions tab, and that it runs on the next pull request.
+The YAML below is the same content, kept here so the file can be restored by copy and
+paste. GitHub only allows an OAuth app to write a workflow file with the `workflow`
+scope, so if a future connection lacks it, the fix is a manual paste of this block.
 
 ## `ci.yml`
 

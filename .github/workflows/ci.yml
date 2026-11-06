@@ -1,31 +1,5 @@
-# CI
+# CI workflow. Documentation lives in CI.md; this file must stay valid YAML.
 
-**Purpose:** The CI workflow that must run on every pull request and every push to `main`, and the one step needed to switch it on.
-**Status:** Written and reviewed here; the workflow file itself is **not yet committed**. Action needed from the owner (see below).
-
-## Why this README exists
-
-`ci.yml` could not be pushed from the agent's GitHub connection. The connected OAuth app
-holds only the `repo` scope, and GitHub refuses any write to a workflow file without the
-`workflow` scope:
-
-```
-refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope
-```
-
-Nothing was worked around. The exact workflow is kept below, in full, so that it is
-reviewable in this pull request.
-
-## To switch CI on, either
-
-1. Reconnect the GitHub account with the **workflow** scope (Settings → connected accounts → GitHub → grant `workflow`), then move the block below into `.github/workflows/ci.yml`; or
-2. Save the block below as `.github/workflows/ci.yml` yourself and push it.
-
-Then confirm the `name: CI` workflow appears under the Actions tab, and that it runs on the next pull request.
-
-## `ci.yml`
-
-```yaml
 name: CI
 
 on:
@@ -95,11 +69,21 @@ jobs:
 
       - name: Build
         run: npm run build
-```
 
-## What it runs
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history: a secret in an old commit is still a live secret.
+          fetch-depth: 0
 
-Install, lint, typecheck, unit tests, database tests against a real Postgres service
-container, and a production build. Any failure fails the job. Dependencies are cached
-through `actions/setup-node` with `cache: npm`, and the Node version comes from `.nvmrc`
-so CI and a developer's machine cannot drift.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
