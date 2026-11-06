@@ -1,0 +1,47 @@
+# Render Blueprint for street-boys-web.
+#
+# Fields checked against the Render Blueprint YAML reference
+# (render.com/docs/blueprint-spec): services[].runtime: docker,
+# healthCheckPath, preDeployCommand, envVars, dockerfilePath.
+#
+# No secret is written here. Every `sync: false` value is entered in the Render
+# dashboard, so the repository never holds one.
+
+services:
+  - type: web
+    name: street-boys-web
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    # Runs before each deploy is promoted, inside this image, behind a Postgres
+    # advisory lock. It never runs at app start (D-139).
+    preDeployCommand: npm run db:migrate
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_POOL_MAX
+        value: "10"
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"
+      - key: CRON_SECRET
+        sync: false
+
+  # A schedule is not Vercel-only. This cron job calls the same protected endpoint
+  # the other platforms call, so jobs do not depend on one host's scheduler.
+  - type: cron
+    name: street-boys-jobs
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    schedule: "0 * * * *"
+    dockerCommand: >-
+      node -e "fetch(process.env.APP_ORIGIN + '/api/internal/jobs/run', { method: 'POST', headers: { authorization: 'Bearer ' + process.env.CRON_SECRET } }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+    envVars:
+      - key: APP_ORIGIN
+        sync: false
+      - key: CRON_SECRET
+        sync: false
