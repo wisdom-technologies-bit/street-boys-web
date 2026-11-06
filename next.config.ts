@@ -36,6 +36,13 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /**
+   * Standalone output (D-139). `next build` writes a self-contained server to
+   * `.next/standalone` with only the files and `node_modules` it actually needs,
+   * which is what the Dockerfile ships and what a plain Node host runs. It is the
+   * reason this app does not depend on any one platform's build system.
+   */
+  output: 'standalone',
   poweredByHeader: false,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
