@@ -58,6 +58,18 @@ npm run db:migrate    # applies any pending migrations
 
 Rules: migrations are forward-only, they are committed with the code that needs them, and they are reviewed as **Level 3**. Never `drizzle-kit push`, never a hand-run query, never a direct edit to a shared database. CI proves an empty database can be built by the migrations alone.
 
+### Migrations are a pre-deploy step, never a startup step
+
+`npm run db:migrate` is run by the platform **before** the new version starts serving traffic, and by a human before a local run. It is never imported by the app and never called from a route handler. A migration that runs on request runs on every cold start, and eventually runs twice at once.
+
+The script takes a **Postgres advisory lock** (`src/server/db/migrate.ts`) so two deploys starting together cannot migrate simultaneously: the second waits, then finds nothing left to do. The lock is released in a `finally`, and a session-scoped advisory lock also dies with its connection, so a killed deploy cannot wedge the next one. If the lock cannot be taken within 60 seconds the deploy fails with a clear message rather than hanging.
+
+```bash
+npm run db:migrate    # node --experimental-strip-types scripts/migrate.ts
+```
+
+Node runs the script's TypeScript directly, so a deploy needs no build step and no extra dependency. The script prints the outcome and the duration; it never prints a connection string, host or user.
+
 ## Environment variables
 
 Names only in the repository; values only in the platform's environment settings or in a gitignored `.env.local`. `.env.example` documents every name.
@@ -66,9 +78,118 @@ Names only in the repository; values only in the platform's environment settings
 | ------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                                              | yes                | Postgres connection string (Neon pooled endpoint in production)                                               |
 | `DATABASE_URL_TEST`                                                                         | yes, by tests only | A separate, disposable database for the integration tests                                                     |
+| `DATABASE_SSL`                                                                              | yes                | `require` or `disable`. Unset follows the URL's `sslmode`                                                     |
+| `DB_POOL_MAX`                                                                               | yes                | Maximum pool connections. Default 5                                                                           |
+| `TRUSTED_PROXY_HOPS`                                                                        | yes                | Proxy hops trusted when reading `x-forwarded-for`. Default 1                                                  |
+| `CRON_SECRET`                                                                               | yes                | Bearer secret for `POST /api/internal/jobs/run`. Empty means the endpoint refuses everything                  |
 | `SESSION_SECRET`, `OTP_HASH_PEPPER`, `PAYSTACK_*`, `REALTIME_SERVICE_TOKEN`, `ADMIN_EMAILS` | **no**             | Declared ahead of the prompts that need them. Unused. Top-ups stay off until the lawyer review passes (D-129) |
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.
+
+### Choosing `DB_POOL_MAX`
+
+The pool is created once per process and reused, which is correct in both worlds: a warm serverless instance keeps one pool, and a long-running server keeps one pool for its whole life. What changes between them is how many connections that pool is allowed to open, because a platform may run many instances of the app at once.
+
+| Where                | Why                                                                                                                            | Suggested `DB_POOL_MAX`                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **Vercel**           | Every function instance gets its own pool, and instances multiply under load. Connections are the scarce resource, not latency | **3–5**, against Neon's **pooled** connection string. Never the direct endpoint, or the database runs out of connections |
+| **Railway / Render** | One long-running process (or a handful), stable connection count                                                               | **10–20**, or roughly `max_connections / instances` minus headroom for migrations and psql                               |
+
+`DATABASE_URL` on Vercel must be the pooled endpoint (`...-pooler...`). The direct endpoint is for migrations, which run as a single pre-deploy step and do not need pooling.
+
+## Deploying
+
+The app must run on **Vercel, Railway and Render** with no platform-specific
+dependency (D-139). Nothing in `src/` imports a host's SDK, and no route uses the
+Edge runtime: every route runs on Node, because the database driver needs TCP.
+
+Same three commands everywhere:
+
+```bash
+npm run build       # Next builds the standalone server
+npm run db:migrate  # pre-deploy only: applies pending SQL behind an advisory lock
+npm start           # or: node server.js inside the image
+```
+
+**Migrations never run at app start.** They are a separate step before the new
+code is promoted, guarded by `pg_advisory_lock`, so two deploys racing each other
+cannot migrate twice.
+
+| What      | Vercel                      | Railway                       | Render                       |
+| --------- | --------------------------- | ----------------------------- | ---------------------------- |
+| Runtime   | Serverless functions (Node) | Long-running container        | Long-running container       |
+| Build     | `npm run build`, detected   | `railway.json` → `Dockerfile` | `render.yaml` → `Dockerfile` |
+| Migrate   | separate CI step or runbook | `preDeployCommand`            | `preDeployCommand`           |
+| Health    | `/api/health`               | `healthcheckPath`             | `healthCheckPath`            |
+| Readiness | `/api/ready`                | `/api/ready`                  | `/api/ready`                 |
+| Jobs      | Vercel Cron, optional       | cron service or Actions       | cron job in `render.yaml`    |
+| Pool size | small (`DB_POOL_MAX=5`)     | larger (`10`)                 | larger (`10`)                |
+
+### Vercel
+
+1. **Import the repository.** Framework preset: Next.js. Nothing else is needed;
+   `vercel.json` only pins the framework so a preview and production build behave
+   the same.
+2. **Set environment variables** in Project → Settings → Environment Variables:
+   `DATABASE_URL` (Neon **pooled** connection string), `DB_POOL_MAX=5`,
+   `TRUSTED_PROXY_HOPS=1`, `CRON_SECRET`. Never in the repo.
+3. **Migrations** are not a Vercel build step that should be trusted on every
+   preview deploy: run `npm run db:migrate` from CI against production before
+   promoting, or as a documented manual step. A preview deployment must not
+   migrate the production database.
+4. **Health check:** point any uptime monitor at `/api/health` (liveness) and
+   `/api/ready` (readiness, 503 when the database is unreachable).
+5. **Pick the function region closest to the database**, from Project → Settings →
+   Functions. A serverless function that crosses an ocean to reach Postgres pays
+   for it on every query, and this app is a chatty one.
+6. **Calling the jobs endpoint on a schedule:** Vercel Cron is one way, not the
+   only way. A `crons` entry in `vercel.json` is deliberately not committed,
+   because it would make Vercel the only scheduler this project knows.
+   `POST /api/internal/jobs/run` with `Authorization: Bearer $CRON_SECRET` works
+   from GitHub Actions on a schedule just as well.
+
+### Railway
+
+1. **New Project → Deploy from GitHub repo.** Railway reads `railway.json`: it
+   builds the `Dockerfile` and starts `node server.js`.
+2. **Variables:** `DATABASE_URL`, `DB_POOL_MAX=10`, `TRUSTED_PROXY_HOPS=1`,
+   `CRON_SECRET`. Railway injects `PORT`; the image already listens on it.
+3. **Pre-deploy:** `preDeployCommand` runs `npm run db:migrate` in the same image
+   before the new container takes traffic.
+4. **Health check:** `/api/health`, as declared in `railway.json`.
+5. **Jobs:** a Railway cron service, or GitHub Actions, calling the endpoint with
+   the bearer secret.
+
+### Render
+
+1. **New → Blueprint**, point it at this repository. `render.yaml` creates the web
+   service and a commented-out cron job.
+2. **Fill the `sync: false` variables** in the dashboard: `DATABASE_URL`,
+   `CRON_SECRET`, and `APP_ORIGIN` for the cron job. Values are never in the file.
+3. **Pre-deploy:** `preDeployCommand: npm run db:migrate`, inside the image,
+   behind the advisory lock.
+4. **Health check:** `/api/health`, as declared.
+5. **Jobs:** enable the `street-boys-jobs` cron service in `render.yaml`, which
+   POSTs to the endpoint hourly with the bearer secret.
+
+### Environment variables per platform
+
+Names and formats only; the same names are listed earlier in [Environment variables](#environment-variables), and this table adds where each one is set. Every value is set in the host's dashboard or a
+gitignored `.env.local`.
+
+| Name                 | Required       | Used on                 | Format                                 |
+| -------------------- | -------------- | ----------------------- | -------------------------------------- |
+| `DATABASE_URL`       | yes            | all three               | `postgresql://USER:PASSWORD@HOST/DB`   |
+| `DATABASE_URL_TEST`  | tests only     | CI, local               | same shape, a disposable database      |
+| `DATABASE_SSL`       | no             | all three               | `require` or `disable`                 |
+| `DB_POOL_MAX`        | no (default 5) | all three               | integer, `5` on Vercel, `10` elsewhere |
+| `TRUSTED_PROXY_HOPS` | no (default 1) | all three               | integer, `0`–`10`                      |
+| `CRON_SECRET`        | for jobs       | all three               | 16+ random characters, unset disables  |
+| `PORT`               | no             | Railway, Render, Docker | injected by the host                   |
+| `APP_ORIGIN`         | for cron jobs  | Render                  | `https://your-service.onrender.com`    |
+
+**Neon is a working assumption, not a decision.** Any Postgres works; the driver
+is plain `pg`, and the connection string is the only thing that changes.
 
 ## Secrets
 

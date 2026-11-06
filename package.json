@@ -11,7 +11,7 @@
     "test": "vitest run --config vitest.config.ts",
     "test:db": "vitest run --config vitest.db.config.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node --experimental-strip-types --no-warnings scripts/migrate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

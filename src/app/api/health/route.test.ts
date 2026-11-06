@@ -1,62 +1,33 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import pkg from '../../../../package.json';
 
-const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
-
+// If the health route ever imports the database client, this mock makes it fail
+// loudly instead of silently opening a pool during a liveness probe.
 vi.mock('@/server/db/client', () => ({
-  getDb: () => ({ execute }),
+  getDb: () => {
+    throw new Error('health must not touch the database');
+  },
 }));
 
 const { GET } = await import('./route');
 
 describe('GET /api/health', () => {
-  beforeEach(() => {
-    execute.mockReset();
-  });
-
-  it('reports ok when the database answers', async () => {
-    execute.mockResolvedValue({ rows: [{ '?column?': 1 }] });
-
+  it('is always 200 with the version and no database call', async () => {
     const response = await GET();
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ status: 'ok', db: 'ok', version: pkg.version });
+    expect(body).toEqual({ status: 'ok', version: pkg.version });
   });
 
-  it('reports db down when the query fails, without leaking the reason', async () => {
-    execute.mockRejectedValue(
-      new Error('connection to postgresql://streetboys:hunter2@db.example:5432 failed'),
-    );
-
+  it('is not cached', async () => {
     const response = await GET();
-    const body = await response.json();
-    const raw = JSON.stringify(body);
-
-    expect(response.status).toBe(200);
-    expect(body.status).toBe('ok');
-    expect(body.db).toBe('down');
-    expect(raw).not.toContain('postgresql://');
-    expect(raw).not.toContain('hunter2');
-    expect(raw).not.toContain('db.example');
-    expect(raw).not.toContain('failed');
-  });
-
-  it('never sends connection details or secrets in the response', async () => {
-    execute.mockResolvedValue({ rows: [] });
-
-    const response = await GET();
-    const raw = JSON.stringify(await response.json());
-
-    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(['db', 'status', 'version']);
-    expect(raw).not.toMatch(/password|secret|token|host|port|user/i);
-  });
-
-  it('is not cacheable', async () => {
-    execute.mockResolvedValue({ rows: [] });
-
-    const response = await GET();
-
     expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('leaks nothing about the environment', async () => {
+    const response = GET();
+    const raw = JSON.stringify(await response.json());
+    expect(raw).not.toMatch(/postgres|password|secret|host|5432/i);
   });
 });

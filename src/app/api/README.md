@@ -1,11 +1,11 @@
 # src/app/api
 
 **Purpose:** HTTP routes. The only way a client reaches the server.
-**Status:** Working. `/api/health` is the first and only route.
+**Status:** Working. `/api/health`, `/api/ready` and the protected `/api/internal/jobs/run`.
 
 ## What is here
 
-`GET /api/health` returns `{ status: "ok", db: "ok" | "down", version }`. It runs a trivial query, reports the database as up or down, and returns no host, driver, error message or stack. It is `no-store`, because a cached health check is a lie.
+`GET /api/health` is **liveness**: always 200, `{ status: "ok", version }`, and it never touches the database (D-142). `GET /api/ready` is **readiness**: it runs a trivial query and returns 200 `{ status: "ready" }` or 503 `{ status: "not_ready" }`, with no connection detail in either body. Both are `no-store`, because a cached health check is a lie.
 
 ## Rules from AGENTS.md (sections 4, 6 and 7)
 

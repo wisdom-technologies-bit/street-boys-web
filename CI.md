@@ -1,27 +1,23 @@
 # CI
 
-**Purpose:** The CI workflow that must run on every pull request and every push to `main`, and the one step needed to switch it on.
-**Status:** Written and reviewed here; the workflow file itself is **not yet committed**. Action needed from the owner (see below).
+## Status
 
-## Why this README exists
+`.github/workflows/ci.yml` is the workflow and it is committed. It runs two jobs on every
+pull request and every push to `main`:
 
-`ci.yml` could not be pushed from the agent's GitHub connection. The connected OAuth app
-holds only the `repo` scope, and GitHub refuses any write to a workflow file without the
-`workflow` scope:
+| Job       | What it proves                                                                                                   |
+| --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `verify`  | install, lint, typecheck, unit tests, database tests against a real Postgres service container, production build |
+| `secrets` | gitleaks over the **full history**, because a credential in an old commit is still a live credential             |
 
-```
-refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope
-```
+Keep the two files separate in your head: **this document explains the workflow, the
+`.yml` file is the workflow.** A previous version of `ci.yml` contained this markdown by
+mistake, which made every run fail at startup with zero jobs. If that ever happens again,
+the symptom is a run with no jobs and no logs.
 
-Nothing was worked around. The exact workflow is kept below, in full, so that it is
-reviewable in this pull request.
-
-## To switch CI on, either
-
-1. Reconnect the GitHub account with the **workflow** scope (Settings → connected accounts → GitHub → grant `workflow`), then move the block below into `.github/workflows/ci.yml`; or
-2. Save the block below as `.github/workflows/ci.yml` yourself and push it.
-
-Then confirm the `name: CI` workflow appears under the Actions tab, and that it runs on the next pull request.
+The YAML below is the same content, kept here so the file can be restored by copy and
+paste. GitHub only allows an OAuth app to write a workflow file with the `workflow`
+scope, so if a future connection lacks it, the fix is a manual paste of this block.
 
 ## `ci.yml`
 
@@ -136,3 +132,62 @@ Install, lint, typecheck, unit tests, database tests against a real Postgres ser
 container, and a production build. Any failure fails the job. Dependencies are cached
 through `actions/setup-node` with `cache: npm`, and the Node version comes from `.nvmrc`
 so CI and a developer's machine cannot drift.
+
+## Suggested additions for the portability work (paste into `.github/workflows/ci.yml`)
+
+The app is not allowed to write workflow files (see the note at the top of this
+file), so these steps are kept here for the owner to paste in. They extend the
+existing `verify` job.
+
+### 1. Prove the container builds
+
+```yaml
+- name: Build the image
+  run: docker build -t street-boys-web:ci .
+
+- name: The image answers liveness without a database
+  run: |
+    docker run -d --name smoke -p 3000:3000 \
+      -e DATABASE_URL=postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test \
+      street-boys-web:ci
+    for i in $(seq 1 30); do
+      curl -fsS http://127.0.0.1:3000/api/health && break
+      sleep 2
+    done
+    curl -fsS http://127.0.0.1:3000/api/health
+    docker rm -f smoke
+```
+
+### 2. Smoke-test the standalone server without Docker
+
+Faster than building an image, and it catches a broken standalone output on every
+pull request:
+
+```yaml
+- name: Standalone server smoke test
+  env:
+    DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+    CRON_SECRET: ci-only-secret-value
+  run: |
+    npm run build
+    cp -r public .next/standalone/
+    cp -r .next/static .next/standalone/.next/
+    (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 node server.js &) 
+    for i in $(seq 1 30); do
+      curl -fsS http://127.0.0.1:3000/api/health && break
+      sleep 2
+    done
+    curl -fsS http://127.0.0.1:3000/api/health
+    curl -fsS http://127.0.0.1:3000/api/ready
+```
+
+### 3. Prove the migration is idempotent
+
+```yaml
+- name: Migrations can run twice
+  env:
+    DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+  run: |
+    npm run db:migrate
+    npm run db:migrate
+```

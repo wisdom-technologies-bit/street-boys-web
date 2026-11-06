@@ -1,6 +1,10 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
+import { getEnv, requireDatabaseUrl, type Env } from '@/server/config/env';
 import * as schema from './schema';
+import { resolveSsl } from './ssl';
+
+export { resolveSsl };
 
 /**
  * The database client.
@@ -19,22 +23,24 @@ type Db = NodePgDatabase<typeof schema>;
 
 const globalForDb = globalThis as unknown as { __streetBoysPool?: Pool; __streetBoysDb?: Db };
 
-function readDatabaseUrl(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error('DATABASE_URL is not set');
-  }
-  return url;
+/**
+ * The pool configuration, built from the validated environment. Exported so a
+ * test can assert the pool size and SSL come from configuration rather than
+ * from a constant somebody typed here.
+ */
+export function poolConfig(env: Env = getEnv()): PoolConfig {
+  return {
+    connectionString: requireDatabaseUrl(env),
+    max: env.DB_POOL_MAX,
+    ssl: resolveSsl(env),
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 5_000,
+  };
 }
 
 export function getPool(): Pool {
   if (!globalForDb.__streetBoysPool) {
-    globalForDb.__streetBoysPool = new Pool({
-      connectionString: readDatabaseUrl(),
-      max: 5,
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 5_000,
-    });
+    globalForDb.__streetBoysPool = new Pool(poolConfig());
   }
   return globalForDb.__streetBoysPool;
 }
@@ -44,6 +50,12 @@ export function getDb(): Db {
     globalForDb.__streetBoysDb = drizzle(getPool(), { schema });
   }
   return globalForDb.__streetBoysDb;
+}
+
+/** Drop the cached pool and client. Tests only. */
+export function resetDbForTests(): void {
+  globalForDb.__streetBoysPool = undefined;
+  globalForDb.__streetBoysDb = undefined;
 }
 
 export async function closeDb(): Promise<void> {
