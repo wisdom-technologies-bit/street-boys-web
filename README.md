@@ -66,9 +66,24 @@ Names only in the repository; values only in the platform's environment settings
 | ------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                                              | yes                | Postgres connection string (Neon pooled endpoint in production)                                               |
 | `DATABASE_URL_TEST`                                                                         | yes, by tests only | A separate, disposable database for the integration tests                                                     |
+| `DATABASE_SSL`                                                                              | yes                | `require` or `disable`. Unset follows the URL's `sslmode`                                                     |
+| `DB_POOL_MAX`                                                                               | yes                | Maximum pool connections. Default 5                                                                            |
+| `TRUSTED_PROXY_HOPS`                                                                        | yes                | Proxy hops trusted when reading `x-forwarded-for`. Default 1                                                  |
+| `CRON_SECRET`                                                                               | yes                | Bearer secret for `POST /api/internal/jobs/run`. Empty means the endpoint refuses everything                  |
 | `SESSION_SECRET`, `OTP_HASH_PEPPER`, `PAYSTACK_*`, `REALTIME_SERVICE_TOKEN`, `ADMIN_EMAILS` | **no**             | Declared ahead of the prompts that need them. Unused. Top-ups stay off until the lawyer review passes (D-129) |
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.
+
+### Choosing `DB_POOL_MAX`
+
+The pool is created once per process and reused, which is correct in both worlds: a warm serverless instance keeps one pool, and a long-running server keeps one pool for its whole life. What changes between them is how many connections that pool is allowed to open, because a platform may run many instances of the app at once.
+
+| Where | Why | Suggested `DB_POOL_MAX` |
+|---|---|---|
+| **Vercel** | Every function instance gets its own pool, and instances multiply under load. Connections are the scarce resource, not latency | **3–5**, against Neon's **pooled** connection string. Never the direct endpoint, or the database runs out of connections |
+| **Railway / Render** | One long-running process (or a handful), stable connection count | **10–20**, or roughly `max_connections / instances` minus headroom for migrations and psql |
+
+`DATABASE_URL` on Vercel must be the pooled endpoint (`...-pooler...`). The direct endpoint is for migrations, which run as a single pre-deploy step and do not need pooling.
 
 ## Secrets
 
