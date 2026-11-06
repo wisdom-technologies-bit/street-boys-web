@@ -1,7 +1,25 @@
 # CI
 
-**Purpose:** The CI workflow that must run on every pull request and every push to `main`, and the one step needed to switch it on.
-**Status:** Written and reviewed here; the workflow file itself is **not yet committed**. Action needed from the owner (see below).
+## Read this first: the workflow file is wrong right now
+
+`.github/workflows/ci.yml` currently contains **this document** (the markdown and the
+fenced block), not the workflow. Every run on every branch fails at startup with zero
+jobs, including on `main`, because GitHub cannot parse it as a workflow.
+
+Fix: delete everything in `.github/workflows/ci.yml`, paste **only** the YAML block from
+the section `## ci.yml` below (the lines between the fences, without the fences), and
+commit. The agent cannot do it: the connection still lacks the `workflow` scope, and
+GitHub refuses the push with
+
+```
+refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope
+```
+
+Until that paste happens, CI is red on every PR for a reason that has nothing to do with
+the code under review.
+
+**Purpose:** The CI workflow that must run on every pull request and every push to `main`, and the exact contents of its file.
+**Status:** Defined here and running, but broken until the owner pastes the YAML into the workflow file (see above).
 
 ## Why this README exists
 
@@ -146,20 +164,20 @@ existing `verify` job.
 ### 1. Prove the container builds
 
 ```yaml
-      - name: Build the image
-        run: docker build -t street-boys-web:ci .
+- name: Build the image
+  run: docker build -t street-boys-web:ci .
 
-      - name: The image answers liveness without a database
-        run: |
-          docker run -d --name smoke -p 3000:3000 \
-            -e DATABASE_URL=postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test \
-            street-boys-web:ci
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:3000/api/health && break
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:3000/api/health
-          docker rm -f smoke
+- name: The image answers liveness without a database
+  run: |
+    docker run -d --name smoke -p 3000:3000 \
+      -e DATABASE_URL=postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test \
+      street-boys-web:ci
+    for i in $(seq 1 30); do
+      curl -fsS http://127.0.0.1:3000/api/health && break
+      sleep 2
+    done
+    curl -fsS http://127.0.0.1:3000/api/health
+    docker rm -f smoke
 ```
 
 ### 2. Smoke-test the standalone server without Docker
@@ -168,30 +186,30 @@ Faster than building an image, and it catches a broken standalone output on ever
 pull request:
 
 ```yaml
-      - name: Standalone server smoke test
-        env:
-          DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
-          CRON_SECRET: ci-only-secret-value
-        run: |
-          npm run build
-          cp -r public .next/standalone/
-          cp -r .next/static .next/standalone/.next/
-          (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 node server.js &) 
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:3000/api/health && break
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:3000/api/health
-          curl -fsS http://127.0.0.1:3000/api/ready
+- name: Standalone server smoke test
+  env:
+    DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+    CRON_SECRET: ci-only-secret-value
+  run: |
+    npm run build
+    cp -r public .next/standalone/
+    cp -r .next/static .next/standalone/.next/
+    (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 node server.js &) 
+    for i in $(seq 1 30); do
+      curl -fsS http://127.0.0.1:3000/api/health && break
+      sleep 2
+    done
+    curl -fsS http://127.0.0.1:3000/api/health
+    curl -fsS http://127.0.0.1:3000/api/ready
 ```
 
 ### 3. Prove the migration is idempotent
 
 ```yaml
-      - name: Migrations can run twice
-        env:
-          DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
-        run: |
-          npm run db:migrate
-          npm run db:migrate
+- name: Migrations can run twice
+  env:
+    DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+  run: |
+    npm run db:migrate
+    npm run db:migrate
 ```
