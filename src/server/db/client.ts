@@ -2,6 +2,9 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolConfig } from 'pg';
 import { getEnv, requireDatabaseUrl, type Env } from '@/server/config/env';
 import * as schema from './schema';
+import { resolveSsl } from './ssl';
+
+export { resolveSsl };
 
 /**
  * The database client.
@@ -19,21 +22,6 @@ import * as schema from './schema';
 type Db = NodePgDatabase<typeof schema>;
 
 const globalForDb = globalThis as unknown as { __streetBoysPool?: Pool; __streetBoysDb?: Db };
-
-/**
- * SSL, from `DATABASE_SSL` when it is set, otherwise from the URL.
- *
- * - `require`  → encrypt. The chain is not verified, which is what a hosted
- *                Postgres with a provider-managed certificate needs and what
- *                `sslmode=require` means to every other Postgres client.
- * - `disable`  → plain TCP, for a database on localhost.
- * - unset      → leave it to the URL's `sslmode`, which is how CI connects.
- */
-export function resolveSsl(env: Pick<Env, 'DATABASE_SSL'>): PoolConfig['ssl'] {
-  if (env.DATABASE_SSL === 'disable') return false;
-  if (env.DATABASE_SSL === 'require') return { rejectUnauthorized: false };
-  return undefined;
-}
 
 /**
  * The pool configuration, built from the validated environment. Exported so a

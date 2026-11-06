@@ -58,6 +58,18 @@ npm run db:migrate    # applies any pending migrations
 
 Rules: migrations are forward-only, they are committed with the code that needs them, and they are reviewed as **Level 3**. Never `drizzle-kit push`, never a hand-run query, never a direct edit to a shared database. CI proves an empty database can be built by the migrations alone.
 
+### Migrations are a pre-deploy step, never a startup step
+
+`npm run db:migrate` is run by the platform **before** the new version starts serving traffic, and by a human before a local run. It is never imported by the app and never called from a route handler. A migration that runs on request runs on every cold start, and eventually runs twice at once.
+
+The script takes a **Postgres advisory lock** (`src/server/db/migrate.ts`) so two deploys starting together cannot migrate simultaneously: the second waits, then finds nothing left to do. The lock is released in a `finally`, and a session-scoped advisory lock also dies with its connection, so a killed deploy cannot wedge the next one. If the lock cannot be taken within 60 seconds the deploy fails with a clear message rather than hanging.
+
+```bash
+npm run db:migrate    # node --experimental-strip-types scripts/migrate.ts
+```
+
+Node runs the script's TypeScript directly, so a deploy needs no build step and no extra dependency. The script prints the outcome and the duration; it never prints a connection string, host or user.
+
 ## Environment variables
 
 Names only in the repository; values only in the platform's environment settings or in a gitignored `.env.local`. `.env.example` documents every name.
