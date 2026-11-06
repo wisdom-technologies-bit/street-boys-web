@@ -1,0 +1,57 @@
+/*
+ * System fonts only, no images, no third-party requests (AGENTS.md section 11:
+ * this app must run on a cheap Android phone on a slow connection).
+ * First-load JavaScript budget: under 150 KB gzipped.
+ */
+:root {
+  color-scheme: light dark;
+  --background: #111111;
+  --foreground: #f5f5f5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeSpeed;
+}
+
+main {
+  text-align: center;
+}
+
+h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 0;
+  opacity: 0.75;
+}

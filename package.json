@@ -1,0 +1,52 @@
+{
+  "name": "street-boys-web",
+  "version": "0.1.0",
+  "description": "Street Boys — browser-based Nigerian street-life simulation. Foundation only: no game features yet.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://x-access-token: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@github.com/wisdom-technologies-bit/street-boys-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wisdom-technologies-bit/street-boys-web/issues"
+  },
+  "homepage": "https://github.com/wisdom-technologies-bit/street-boys-web#readme",
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "next": "^16.4.5",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "dotenv": "^18.0.9",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.5",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  }
+}
