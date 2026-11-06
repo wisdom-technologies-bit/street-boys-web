@@ -136,3 +136,62 @@ Install, lint, typecheck, unit tests, database tests against a real Postgres ser
 container, and a production build. Any failure fails the job. Dependencies are cached
 through `actions/setup-node` with `cache: npm`, and the Node version comes from `.nvmrc`
 so CI and a developer's machine cannot drift.
+
+## Suggested additions for the portability work (paste into `.github/workflows/ci.yml`)
+
+The app is not allowed to write workflow files (see the note at the top of this
+file), so these steps are kept here for the owner to paste in. They extend the
+existing `verify` job.
+
+### 1. Prove the container builds
+
+```yaml
+      - name: Build the image
+        run: docker build -t street-boys-web:ci .
+
+      - name: The image answers liveness without a database
+        run: |
+          docker run -d --name smoke -p 3000:3000 \
+            -e DATABASE_URL=postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test \
+            street-boys-web:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/api/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          docker rm -f smoke
+```
+
+### 2. Smoke-test the standalone server without Docker
+
+Faster than building an image, and it catches a broken standalone output on every
+pull request:
+
+```yaml
+      - name: Standalone server smoke test
+        env:
+          DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+          CRON_SECRET: ci-only-secret-value
+        run: |
+          npm run build
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/
+          (cd .next/standalone && PORT=3000 HOSTNAME=127.0.0.1 node server.js &) 
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/api/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          curl -fsS http://127.0.0.1:3000/api/ready
+```
+
+### 3. Prove the migration is idempotent
+
+```yaml
+      - name: Migrations can run twice
+        env:
+          DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_test
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+```
