@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+
+# build output
+dist/
+coverage/
+*.tsbuildinfo
+
+# environment files — names only in .env.example, never values
+.env
+.env.*
+!.env.example
+
+# editor and OS
+.DS_Store
+.idea/
+.vscode/
+
+# logs
+*.log
+npm-debug.log*
