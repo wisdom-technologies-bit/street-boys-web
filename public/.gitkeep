@@ -1,0 +1,1 @@
+# Keep this folder. Next serves it statically, and the Docker runner copies it.

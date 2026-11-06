@@ -1,0 +1,24 @@
+# Everything the image does not need. Kept short and explicit so the build
+# context stays small and no local secret can be copied in by accident.
+
+.git
+.gitignore
+.github
+node_modules
+.next
+coverage
+*.log
+
+# Local environment and editor files
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea
+.vscode
+
+# Documentation: the image runs code, it does not read the design docs
+docs-ref
+prompts
+*.md
+!README.md
