@@ -80,13 +80,15 @@ export async function requestCode(input: {
   }
 
   const perEmail = await consumeRateLimit(`otp:email:${emailKey}`, REQUESTS_PER_EMAIL_HOUR, 3600);
-  if (!(await check(perEmail)))
+  if (!perEmail.allowed) {
     return { status: 'rate_limited', retryAfterSeconds: perEmail.retryAfterSeconds };
+  }
 
   if (ipKey) {
     const perIp = await consumeRateLimit(`otp:ip:${ipKey}`, REQUESTS_PER_IP_HOUR, 3600);
-    if (!(await check(perIp)))
+    if (!perIp.allowed) {
       return { status: 'rate_limited', retryAfterSeconds: perIp.retryAfterSeconds };
+    }
   }
 
   const pool = getPool();
