@@ -107,6 +107,22 @@ export async function createUser(input: CreateUserInput): Promise<{ id: string }
   return row;
 }
 
+/** A user by id, for code that has an id and needs the status that goes with it. */
+export async function findUserById(userId: string): Promise<{
+  id: string;
+  status: UserStatus;
+} | null> {
+  const rows = await getDb()
+    .select({ id: users.id, status: users.status })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, status: row.status as UserStatus };
+}
+
 export async function findUserByCanonicalEmail(emailCanonical: string): Promise<{
   id: string;
   email: string;
