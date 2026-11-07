@@ -3,8 +3,10 @@ import {
   EnvError,
   getEnv,
   parseEnv,
+  requireAppOrigin,
   requireDatabaseUrl,
   requireIpHashPepper,
+  requireOtpPepper,
   resetEnvCache,
   resolveMigrationDatabaseUrl,
 } from './env';
@@ -150,5 +152,92 @@ describe('requireIpHashPepper', () => {
   it('fails at the point of use when the pepper is missing, without printing anything', () => {
     const env = parseEnv({});
     expect(() => requireIpHashPepper(env)).toThrow(/IP_HASH_PEPPER/);
+  });
+});
+
+describe('email provider rules', () => {
+  it('defaults to console outside production', () => {
+    expect(parseEnv({ NODE_ENV: 'development' }).EMAIL_PROVIDER).toBe('console');
+    expect(parseEnv({ NODE_ENV: 'test' }).EMAIL_PROVIDER).toBe('console');
+  });
+
+  it('refuses to run in production without a provider', () => {
+    expect(() => parseEnv({ NODE_ENV: 'production' })).toThrow(/EMAIL_PROVIDER/);
+  });
+
+  it('refuses the console provider in production', () => {
+    expect(() => parseEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'console' })).toThrow(
+      /not allowed in production/,
+    );
+  });
+
+  it('accepts brevo in production when its key and sender are set', () => {
+    const env = parseEnv({
+      NODE_ENV: 'production',
+      EMAIL_PROVIDER: 'brevo',
+      BREVO_API_KEY: 'test-key-value',
+      EMAIL_FROM_ADDRESS: 'noreply@example.com',
+      EMAIL_FROM_NAME: 'Street Boys',
+    });
+    expect(env.EMAIL_PROVIDER).toBe('brevo');
+  });
+
+  it('names every missing brevo variable at once', () => {
+    let message = '';
+    try {
+      parseEnv({ EMAIL_PROVIDER: 'brevo' });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('BREVO_API_KEY');
+    expect(message).toContain('EMAIL_FROM_ADDRESS');
+    expect(message).toContain('EMAIL_FROM_NAME');
+  });
+
+  it('rejects an unknown provider', () => {
+    expect(() => parseEnv({ EMAIL_PROVIDER: 'sendgrid' })).toThrow(/EMAIL_PROVIDER/);
+  });
+
+  it('rejects a sender address that is not an email', () => {
+    expect(() =>
+      parseEnv({
+        EMAIL_PROVIDER: 'brevo',
+        BREVO_API_KEY: 'k',
+        EMAIL_FROM_ADDRESS: 'not-an-address',
+        EMAIL_FROM_NAME: 'Street Boys',
+      }),
+    ).toThrow(/EMAIL_FROM_ADDRESS/);
+  });
+});
+
+describe('sign-in secrets and origin', () => {
+  it('requires OTP_PEPPER to be at least 32 characters', () => {
+    expect(() => parseEnv({ OTP_PEPPER: 'short' })).toThrow(/OTP_PEPPER/);
+    expect(parseEnv({ OTP_PEPPER: 'y'.repeat(32) }).OTP_PEPPER).toHaveLength(32);
+  });
+
+  it('accepts a URL for APP_ORIGIN and rejects anything else', () => {
+    expect(parseEnv({ APP_ORIGIN: 'https://streetboys.example' }).APP_ORIGIN).toBe(
+      'https://streetboys.example',
+    );
+    expect(() => parseEnv({ APP_ORIGIN: 'streetboys' })).toThrow(/APP_ORIGIN/);
+  });
+
+  it('fails at the point of use when the OTP pepper is missing', () => {
+    expect(() => requireOtpPepper(parseEnv({}))).toThrow(/OTP_PEPPER/);
+  });
+
+  it('fails at the point of use when the origin is missing', () => {
+    expect(() => requireAppOrigin(parseEnv({}))).toThrow(/APP_ORIGIN/);
+  });
+
+  it('never prints a provider key in an error', () => {
+    let message = '';
+    try {
+      parseEnv({ EMAIL_PROVIDER: 'brevo', BREVO_API_KEY: 'super-secret-key-value' });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).not.toContain('super-secret-key-value');
   });
 });

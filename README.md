@@ -84,6 +84,9 @@ Names only in the repository; values only in the platform's environment settings
 | `TRUSTED_PROXY_HOPS`                                                                        | yes                | Proxy hops trusted when reading `x-forwarded-for`. Default 1                                                  |
 | `CRON_SECRET`                                                                               | yes                | Bearer secret for `POST /api/internal/jobs/run`. Empty means the endpoint refuses everything                  |
 | `IP_HASH_PEPPER`                                                                            | yes                | Pepper for account HMACs. 32+ characters. Changing it invalidates every stored hash                           |
+| `EMAIL_PROVIDER`                                                                            | yes                | `brevo` or `console`. Required in production; `console` is refused there                                      |
+| `EMAIL_FROM_ADDRESS`                                                                        | with brevo         | A validated sender address                                                                                    |
+| `EMAIL_FROM_NAME`                                                                           | with brevo         | The sender name a player sees                                                                                 |
 | `SESSION_SECRET`, `OTP_HASH_PEPPER`, `PAYSTACK_*`, `REALTIME_SERVICE_TOKEN`, `ADMIN_EMAILS` | **no**             | Declared ahead of the prompts that need them. Unused. Top-ups stay off until the lawyer review passes (D-129) |
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.
