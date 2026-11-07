@@ -53,7 +53,10 @@ export type { ReverseTransactionInput } from './reverse';
 export {
   AccountFrozen,
   AccountNotFound,
+  AlreadyReversed,
   IdempotencyConflict,
+  InsufficientFundsForReversal,
+  UnknownTransaction,
   InsufficientFunds,
   LedgerError,
   LedgerValidationError,
