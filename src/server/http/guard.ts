@@ -33,7 +33,11 @@ export type AuthErrorCode =
   | 'rate_limited'
   | 'send_failed'
   | 'unauthorized'
-  | 'forbidden';
+  | 'forbidden'
+  | 'name_not_allowed'
+  | 'avatar_invalid'
+  | 'name_taken'
+  | 'already_has_character';
 
 const ERROR_STATUS: Record<AuthErrorCode, number> = {
   invalid_request: 400,
@@ -43,6 +47,10 @@ const ERROR_STATUS: Record<AuthErrorCode, number> = {
   send_failed: 503,
   unauthorized: 401,
   forbidden: 403,
+  name_not_allowed: 400,
+  avatar_invalid: 400,
+  name_taken: 409,
+  already_has_character: 409,
 };
 
 export function errorResponse(
