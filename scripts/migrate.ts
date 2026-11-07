@@ -11,17 +11,20 @@
  * `DATABASE_URL`, because a pooled URL can route the lock and the unlock to
  * different backends.
  *
- * Node runs this TypeScript directly (`node --experimental-strip-types`, default
- * from Node 22.18 / 23.6), so there is no build step for a deploy script and no
- * extra dependency in the runtime image.
+ * Node runs this TypeScript directly for a developer (`node
+ * --experimental-strip-types`, default from Node 22.18 / 23.6). In a production
+ * image the same file is bundled to plain JavaScript at image build time, so the
+ * runtime needs no TypeScript, no bundler and no `dotenv`: see
+ * `docs/migrate-in-production.md`.
  */
-import { config as loadEnv } from 'dotenv';
+import { loadLocalEnvFile } from '../src/server/config/load-env-file.ts';
 import { parseEnv, resolveMigrationDatabaseUrl } from '../src/server/config/env.ts';
 import { resolveSsl } from '../src/server/db/ssl.ts';
 import { runMigrations } from '../src/server/db/migrate.ts';
 
 async function main(): Promise<void> {
-  loadEnv({ path: ['.env.local', '.env'], quiet: true });
+  // Local development only: in production the platform supplies the environment.
+  loadLocalEnvFile();
 
   const env = parseEnv(process.env);
   // A direct connection: the advisory lock must live on one backend.
