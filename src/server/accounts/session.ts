@@ -139,12 +139,14 @@ export type CurrentUser = {
 };
 
 /**
- * The signed-in user for this request, or null.
+ * The session's user **regardless of status**, or null.
  *
- * Null for a missing, unknown, expired or revoked session, and null for a frozen
- * or banned account, which is what makes a freeze take effect immediately.
+ * Only two callers want this: `getCurrentUser`, which then hides a frozen account,
+ * and the character route, which has to answer 403 rather than 401 so a player
+ * whose account was frozen is told the truth instead of being asked to sign in
+ * again. Nothing else should read it, because "signed in" must mean "active".
  */
-export async function getCurrentUser(
+export async function findSessionUser(
   request: Request,
   now: Date = new Date(),
 ): Promise<CurrentUser | null> {
@@ -176,7 +178,6 @@ export async function getCurrentUser(
 
   const row = rows[0];
   if (!row) return null;
-  if (row.status !== 'active') return null;
 
   if (now.getTime() - new Date(row.last_seen_at).getTime() > TOUCH_INTERVAL_MS) {
     // Sliding expiry, refreshed at most once an hour so a busy client does not
@@ -198,6 +199,21 @@ export async function getCurrentUser(
     ageBand: row.age_band,
     sessionId: row.session_id,
   };
+}
+
+/**
+ * The signed-in user for this request, or null.
+ *
+ * Null for a missing, unknown, expired or revoked session, and null for a frozen
+ * or banned account, which is what makes a freeze take effect immediately.
+ */
+export async function getCurrentUser(
+  request: Request,
+  now: Date = new Date(),
+): Promise<CurrentUser | null> {
+  const user = await findSessionUser(request, now);
+  if (!user || user.status !== 'active') return null;
+  return user;
 }
 
 /** Revoke this request's session. Idempotent: an unknown token revokes nothing. */

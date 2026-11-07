@@ -16,9 +16,7 @@ import { isCronRequestAuthorized } from '@/server/http/cron-auth';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export type JobsRunResponse =
-  | { ran: number }
-  | { error: 'not_configured' | 'unauthorized' };
+export type JobsRunResponse = { ran: number } | { error: 'not_configured' | 'unauthorized' };
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
@@ -26,11 +24,17 @@ export async function POST(request: Request): Promise<NextResponse<JobsRunRespon
   const { CRON_SECRET } = getEnv();
 
   if (!CRON_SECRET) {
-    return NextResponse.json({ error: 'not_configured' as const }, { status: 503, headers: NO_STORE });
+    return NextResponse.json(
+      { error: 'not_configured' as const },
+      { status: 503, headers: NO_STORE },
+    );
   }
 
   if (!isCronRequestAuthorized(request.headers.get('authorization'), CRON_SECRET)) {
-    return NextResponse.json({ error: 'unauthorized' as const }, { status: 401, headers: NO_STORE });
+    return NextResponse.json(
+      { error: 'unauthorized' as const },
+      { status: 401, headers: NO_STORE },
+    );
   }
 
   // Jobs arrive in a later prompt. Nothing to run yet.

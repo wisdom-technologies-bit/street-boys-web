@@ -1,23 +1,7 @@
 /**
- * The avatar a player picks at character creation.
- *
- * **Ids only**, never free text and never an uploaded file: the client renders a
- * fixed set of shapes from these numbers, so there is no image upload to moderate
- * and nothing to store but three small integers. Placeholder artwork; the ids are
- * the contract, and the drawing behind them can change without a migration.
+ * The avatar options now live in `src/shared/avatar-options.ts`, because the
+ * character page draws the picker and the client may only import from
+ * `src/shared`. This module stays as the server-side name for them, so every
+ * existing import and test keeps working unchanged.
  */
-export const AVATAR_SKIN_TONES = [1, 2, 3, 4, 5, 6] as const;
-export const AVATAR_HAIR_STYLES = [1, 2, 3, 4, 5, 6, 7, 8] as const;
-export const AVATAR_OUTFITS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
-
-export type AvatarSkinTone = (typeof AVATAR_SKIN_TONES)[number];
-export type AvatarHairStyle = (typeof AVATAR_HAIR_STYLES)[number];
-export type AvatarOutfit = (typeof AVATAR_OUTFITS)[number];
-
-export type Avatar = {
-  skinTone: AvatarSkinTone;
-  hair: AvatarHairStyle;
-  outfit: AvatarOutfit;
-};
-
-export const DEFAULT_AVATAR: Avatar = { skinTone: 3, hair: 1, outfit: 1 };
+export * from '@/shared/avatar-options';

@@ -13,6 +13,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['src/test/unit-setup.ts'],
-    exclude: ['**/*.db.test.ts', 'node_modules/**'],
+    // Component tests need a DOM, so they live in vitest.ui.config.ts.
+    exclude: ['**/*.db.test.ts', '**/*.ui.test.tsx', 'node_modules/**'],
   },
 });

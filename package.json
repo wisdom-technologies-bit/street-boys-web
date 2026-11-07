@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --experimental-strip-types --no-warnings scripts/migrate.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:ui": "vitest run --config vitest.ui.config.ts"
   },
   "repository": "https://github.com/wisdom-technologies-bit/street-boys-web",
   "bugs": {
@@ -29,6 +30,8 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
@@ -37,6 +40,7 @@
     "drizzle-kit": "^0.31.11",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.4.5",
+    "jsdom": "^31.0.0",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
