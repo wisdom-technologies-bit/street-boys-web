@@ -7,7 +7,7 @@ import {
   type TransferTier,
 } from '@/server/config/transfer-params';
 import { getPool } from '@/server/db/client';
-import { getAccountByCode, postTransaction } from '@/server/ledger';
+import { getAccountByCode, getBalance, getPlayerAccount, postTransaction } from '@/server/ledger';
 import { InsufficientFunds, IdempotencyConflict } from '@/server/ledger';
 import { logEvent } from '@/server/security/audit';
 import { consumeRateLimit } from '@/server/security/rate-limit';
@@ -90,13 +90,13 @@ type ReceiverRow = {
   display_name: string;
 };
 
+// The wallet is looked up through the ledger's public API, never by naming its tables
+// here: the boundary test enforces that (AGENTS.md 3.2).
 const SENDER_SQL = `select u.id, u.status, u.created_at, u.verification_level,
-                            (select a.id from accounts a where a.owner_user_id = u.id and a.kind = 'player') as account_id,
                             exists (select 1 from characters c where c.user_id = u.id) as has_character
                        from users u where u.id = $1`;
 
 const RECEIVER_SQL = `select u.id, u.status, u.created_at, u.verification_level,
-                             (select a.id from accounts a where a.owner_user_id = u.id and a.kind = 'player') as account_id,
                              c.name as display_name
                         from users u join characters c on c.user_id = u.id
                        where c.name_canonical = $1`;
@@ -283,20 +283,21 @@ async function loadSender(client: PoolClient, userId: string): Promise<SenderRow
 
   if (sender.status === 'banned') throw new TransferError('forbidden', 'this account is banned');
   if (sender.status === 'frozen') throw new TransferError('forbidden', 'this account is frozen');
-  if (!sender.has_character || !sender.account_id) {
+  const wallet = await getPlayerAccount(sender.id);
+  if (!sender.has_character || !wallet) {
     throw new TransferError('invalid_request', 'this account cannot send money yet');
   }
-  return sender;
+  return { ...sender, account_id: wallet.id };
 }
 
 async function loadReceiver(client: PoolClient, toName: string): Promise<ReceiverRow> {
   const { rows } = await client.query<ReceiverRow>(RECEIVER_SQL, [canonicalizeName(toName)]);
   const receiver = rows[0];
+  if (!receiver || receiver.status !== 'active') throw receiverUnavailable();
+  const wallet = await getPlayerAccount(receiver.id);
   // Not found, banned, frozen and wallet-less are one answer on purpose.
-  if (!receiver || receiver.status !== 'active' || !receiver.account_id) {
-    throw receiverUnavailable();
-  }
-  return receiver;
+  if (!wallet) throw receiverUnavailable();
+  return { ...receiver, account_id: wallet.id };
 }
 
 /**
@@ -333,10 +334,8 @@ async function findReplay(
     throw new TransferError('idempotency_conflict', 'that request was already used differently');
   }
 
-  const { rows: balanceRows } = await client.query<{ balance_kobo: string }>(
-    'select balance_kobo from account_balances where account_id = $1',
-    [(await loadSender(client, request.senderUserId)).account_id],
-  );
+  const sender = await loadSender(client, request.senderUserId);
+  const currentBalance = await getBalance(sender.account_id as string);
 
   return {
     id: existing.id,
@@ -344,7 +343,7 @@ async function findReplay(
     amountKobo: BigInt(existing.amount_kobo),
     taxKobo: BigInt(existing.tax_kobo),
     releaseAt: existing.release_at,
-    balanceKobo: BigInt(balanceRows[0]?.balance_kobo ?? '0'),
+    balanceKobo: currentBalance,
     replayed: true,
   };
 }
@@ -465,16 +464,17 @@ async function loadSenderFromPool(userId: string): Promise<SenderRow> {
   const sender = rows[0];
   if (!sender) throw new TransferError('forbidden', 'there is no account to send from');
   if (sender.status !== 'active') throw new TransferError('forbidden', 'this account cannot send');
-  return sender;
+  const wallet = await getPlayerAccount(sender.id);
+  return { ...sender, account_id: wallet?.id ?? null };
 }
 
 async function loadReceiverFromPool(toName: string): Promise<ReceiverRow> {
   const { rows } = await getPool().query<ReceiverRow>(RECEIVER_SQL, [canonicalizeName(toName)]);
   const receiver = rows[0];
-  if (!receiver || receiver.status !== 'active' || !receiver.account_id) {
-    throw receiverUnavailable();
-  }
-  return receiver;
+  if (!receiver || receiver.status !== 'active') throw receiverUnavailable();
+  const wallet = await getPlayerAccount(receiver.id);
+  if (!wallet) throw receiverUnavailable();
+  return { ...receiver, account_id: wallet.id };
 }
 
 export type { TransferTier };

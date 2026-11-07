@@ -1,7 +1,7 @@
 import { canonicalizeName } from '@/server/accounts/character';
 import { getPool } from '@/server/db/client';
-import { postTransaction } from '@/server/ledger';
-import { resetLedger, systemAccountId, withLedgerWrite } from '@/server/ledger/test-support';
+import { createPlayerAccount, getBalance, postTransaction } from '@/server/ledger';
+import { resetLedger, systemAccountId } from '@/server/ledger/test-support';
 
 /**
  * Test scaffolding for transfers: real users, real characters, real wallets.
@@ -54,18 +54,8 @@ export async function createPlayer(
     [userId, name, canonical],
   );
 
-  const accountId = await withLedgerWrite(async (client) => {
-    const inserted = await client.query<{ id: string }>(
-      `insert into accounts (kind, owner_user_id) values ('player', $1) returning id`,
-      [userId],
-    );
-    const id = inserted.rows[0]?.id as string;
-    await client.query(
-      `insert into account_balances (account_id, allow_negative) values ($1, false)`,
-      [id],
-    );
-    return id;
-  });
+  // The wallet is opened the way the product opens one: through the ledger.
+  const accountId = (await createPlayerAccount(userId)).id;
 
   return {
     userId,
@@ -94,11 +84,7 @@ export async function fund(player: TestPlayer, kobo: bigint): Promise<void> {
 }
 
 export async function balance(accountId: string): Promise<bigint> {
-  const { rows } = await getPool().query<{ balance_kobo: string }>(
-    'select balance_kobo from account_balances where account_id = $1',
-    [accountId],
-  );
-  return BigInt(rows[0]?.balance_kobo ?? '0');
+  return getBalance(accountId);
 }
 
 export async function transferCount(): Promise<number> {
