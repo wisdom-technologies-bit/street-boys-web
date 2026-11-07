@@ -25,7 +25,8 @@ export async function seedSystemAccounts(): Promise<void> {
     BEGIN
       PERFORM set_config('app.ledger_write', 'on', true);
       INSERT INTO "accounts" ("kind", "code", "allow_negative")
-      VALUES ('system', 'SYSTEM_MINT', true), ('system', 'SYSTEM_BURN', false), ('treasury', 'TREASURY', false)
+      VALUES ('system', 'SYSTEM_MINT', true), ('system', 'SYSTEM_BURN', false),
+             ('treasury', 'TREASURY', false), ('escrow', 'ESCROW_TRANSFERS', false)
       ON CONFLICT ("code") DO NOTHING;
       FOR seeded IN SELECT "id", "allow_negative" FROM "accounts" WHERE "code" IS NOT NULL LOOP
         INSERT INTO "account_balances" ("account_id", "allow_negative")
@@ -76,7 +77,7 @@ export async function createTestPlayerAccount(label: string): Promise<string> {
 
 /** The id of a seeded system account, by code. */
 export async function systemAccountId(
-  code: 'SYSTEM_MINT' | 'SYSTEM_BURN' | 'TREASURY',
+  code: 'SYSTEM_MINT' | 'SYSTEM_BURN' | 'TREASURY' | 'ESCROW_TRANSFERS',
 ): Promise<string> {
   const { rows } = await getPool().query<{ id: string }>(
     'select id from accounts where code = $1',

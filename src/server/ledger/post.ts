@@ -75,6 +75,26 @@ export type PostTransactionInput = {
    * prompt, not something this module can decide (see README).
    */
   allowFrozenDebit?: boolean;
+
+  /**
+   * Join an already-open database transaction instead of opening one.
+   *
+   * A caller that has to write its own rows and move money in the same atomic step
+   * (a transfer row and its ledger postings) passes its client here, so the ledger's
+   * work commits and rolls back with the caller's. The ledger still does all of its
+   * own checks: the write gate, the row locks in account order, idempotency and the
+   * balance checks are unchanged.
+   *
+   * Two things change, both deliberately:
+   *
+   * - **Retries move to the caller.** The ledger cannot retry a deadlock inside
+   *   somebody else's transaction without discarding that caller's work, so a
+   *   deadlock or serialization failure is thrown and the caller retries the whole
+   *   transaction.
+   * - **Frozen-debit overrides are refused.** Their audit event is written after the
+   *   commit, and this module cannot know when the caller's commit happens.
+   */
+  client?: PoolClient;
 };
 
 export type PostedBalance = { accountId: string; balanceKobo: Kobo };
@@ -272,12 +292,14 @@ async function readBalances(client: PoolClient, accountIds: string[]): Promise<P
 async function postOnce(
   request: NormalizedRequest,
   fingerprint: string,
+  join?: PoolClient,
 ): Promise<PostedTransaction> {
-  const client = await getPool().connect();
+  const client = join ?? (await getPool().connect());
+  const ownsTransaction = !join;
   const accountIds = request.entries.map((entry) => entry.accountId);
 
   try {
-    await client.query('begin');
+    if (ownsTransaction) await client.query('begin');
     // The gate the database insists on before it will write a balance.
     await client.query("select set_config('app.ledger_write', 'on', true)");
 
@@ -306,12 +328,12 @@ async function postOnce(
       const row = existing.rows[0];
       if (!row) throw new Error('idempotency key conflict without a row: this cannot happen');
       if (row.request_fingerprint !== fingerprint) {
-        await client.query('rollback');
+        if (ownsTransaction) await client.query('rollback');
         throw new IdempotencyConflict(request.idempotencyKey);
       }
 
       const balances = await readBalances(client, accountIds);
-      await client.query('commit');
+      if (ownsTransaction) await client.query('commit');
       return { transactionId: row.id, replayed: true, balances };
     }
 
@@ -380,7 +402,7 @@ async function postOnce(
     }
 
     const balances = await readBalances(client, accountIds);
-    await client.query('commit');
+    if (ownsTransaction) await client.query('commit');
 
     if (frozenDebited) {
       // After the commit, because the money has moved and the record of who allowed
@@ -397,16 +419,29 @@ async function postOnce(
 
     return { transactionId, replayed: false, balances };
   } catch (error) {
-    await client.query('rollback').catch(() => {});
+    // Rolling back somebody else's transaction would hide the work they did before
+    // this call and the decision about what to do next is theirs, not ours.
+    if (ownsTransaction) await client.query('rollback').catch(() => {});
     throw error;
   } finally {
-    client.release();
+    if (ownsTransaction) client.release();
   }
 }
 
 export async function postTransaction(input: PostTransactionInput): Promise<PostedTransaction> {
   const request = normalize(input);
   const fingerprint = requestFingerprint(request);
+  const join = input.client;
+
+  if (join && request.allowFrozenDebit) {
+    throw new LedgerValidationError(
+      'a frozen-debit override cannot join a caller\'s transaction: its audit event must follow a commit',
+      'invalid_request',
+    );
+  }
+
+  // A joined posting never retries: the caller owns the transaction and retries it.
+  if (join) return postOnce(request, fingerprint, join);
 
   const maxAttempts = 4; // the first try, then up to three retries
   for (let attempt = 1; ; attempt += 1) {
