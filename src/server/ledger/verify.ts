@@ -150,10 +150,13 @@ const CHECKS: CheckSpec[] = [
   },
   {
     check: 'system_account_missing',
-    countSql: `select (3 - count(*))::text as count
-                 from accounts where code in ('SYSTEM_MINT', 'SYSTEM_BURN', 'TREASURY')`,
+    countSql: `select (4 - count(*))::text as count
+                 from accounts
+                where code in ('SYSTEM_MINT', 'SYSTEM_BURN', 'TREASURY', 'ESCROW_TRANSFERS')`,
     // Missing rows have no id to report; the missing codes are in the check name.
-    idSql: `select null::text as id where (select count(*) from accounts where code in ('SYSTEM_MINT', 'SYSTEM_BURN', 'TREASURY')) < 3`,
+    idSql: `select null::text as id
+               where (select count(*) from accounts
+                       where code in ('SYSTEM_MINT', 'SYSTEM_BURN', 'TREASURY', 'ESCROW_TRANSFERS')) < 4`,
   },
   {
     check: 'reversal_not_negation',
