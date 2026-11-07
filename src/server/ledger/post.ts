@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { isLedgerCategory } from '@/server/config/ledger-categories';
 import { MAX_ENTRIES_PER_TX, MAX_TX_KOBO } from '@/server/config/ledger-limits';
 import { getPool } from '@/server/db/client';
+import { logEvent } from '@/server/security/audit';
 import { sha256Hex } from '@/server/security/crypto';
 import {
   AccountFrozen,
@@ -41,6 +42,9 @@ import { kobo, type Kobo } from './money';
  * Metadata is for a human reading a report, never for identifying a person or
  * carrying a credential. The same rule as the audit log, deliberately.
  */
+/** The only categories that may ever debit a frozen account. */
+export const FROZEN_DEBIT_CATEGORIES = ['reversal', 'admin_adjustment'] as const;
+
 const FORBIDDEN_METADATA_KEYS = [
   'code',
   'otp',
@@ -62,6 +66,15 @@ export type PostTransactionInput = {
   metadata?: Record<string, unknown>;
   actorUserId?: string;
   reversesTransactionId?: string;
+  /**
+   * Let this posting debit a frozen account.
+   *
+   * Only for `reversal` and `admin_adjustment`, and only with an actor, because a
+   * frozen account still has to be able to give money back. Every use is written to
+   * the audit log. Who may call this is an authorization question for the admin
+   * prompt, not something this module can decide (see README).
+   */
+  allowFrozenDebit?: boolean;
 };
 
 export type PostedBalance = { accountId: string; balanceKobo: Kobo };
@@ -86,6 +99,7 @@ const inputSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   actorUserId: z.uuid().optional(),
   reversesTransactionId: z.uuid().optional(),
+  allowFrozenDebit: z.boolean().optional(),
 });
 
 type NormalizedRequest = {
@@ -95,6 +109,7 @@ type NormalizedRequest = {
   metadata: Record<string, unknown>;
   actorUserId: string | null;
   reversesTransactionId: string | null;
+  allowFrozenDebit: boolean;
 };
 
 function assertMetadataIsSafe(value: unknown, path = 'metadata'): void {
@@ -173,6 +188,30 @@ function normalize(input: PostTransactionInput): NormalizedRequest {
     );
   }
 
+  if (request.allowFrozenDebit) {
+    // A frozen-debit override is only legitimate for the two categories that have to
+    // be able to give money back, and only when someone is accountable for it.
+    if (!(FROZEN_DEBIT_CATEGORIES as readonly string[]).includes(request.category)) {
+      throw new LedgerValidationError(
+        'only a reversal or an admin adjustment may debit a frozen account',
+        'invalid_request',
+      );
+    }
+    if (!request.actorUserId) {
+      throw new LedgerValidationError(
+        'a frozen-debit override requires the actor who authorised it',
+        'invalid_request',
+      );
+    }
+  }
+
+  if (request.category === 'reversal' && !request.reversesTransactionId) {
+    throw new LedgerValidationError(
+      'a reversal must name the transaction it reverses',
+      'invalid_reversal',
+    );
+  }
+
   assertMetadataIsSafe(request.metadata ?? {});
 
   return {
@@ -182,6 +221,7 @@ function normalize(input: PostTransactionInput): NormalizedRequest {
     metadata: request.metadata ?? {},
     actorUserId: request.actorUserId ?? null,
     reversesTransactionId: request.reversesTransactionId ?? null,
+    allowFrozenDebit: request.allowFrozenDebit ?? false,
   };
 }
 
@@ -301,13 +341,18 @@ async function postOnce(
       .filter((entry) => entry.amountKobo < 0n)
       .map((entry) => entry.accountId);
 
+    let frozenDebited: string | null = null;
+
     if (debited.length > 0) {
       const frozen = await client.query<{ id: string }>(
         'select id from accounts where id = any($1::uuid[]) and frozen_at is not null order by id limit 1',
         [debited],
       );
       const frozenId = frozen.rows[0]?.id;
-      if (frozenId) throw new AccountFrozen(frozenId);
+      if (frozenId) {
+        if (!request.allowFrozenDebit) throw new AccountFrozen(frozenId);
+        frozenDebited = frozenId;
+      }
     }
 
     for (const entry of request.entries) {
@@ -336,6 +381,20 @@ async function postOnce(
 
     const balances = await readBalances(client, accountIds);
     await client.query('commit');
+
+    if (frozenDebited) {
+      // After the commit, because the money has moved and the record of who allowed
+      // it must not be able to roll the movement back.
+      await logEvent({
+        eventType: 'ledger_frozen_debit_override',
+        actorUserId: request.actorUserId,
+        metadata: { transactionId, category: request.category, accountId: frozenDebited },
+      }).catch(() => {
+        // The override still happened; a failed audit write is reported by the
+        // verifier's callers, not by pretending the posting failed.
+      });
+    }
+
     return { transactionId, replayed: false, balances };
   } catch (error) {
     await client.query('rollback').catch(() => {});

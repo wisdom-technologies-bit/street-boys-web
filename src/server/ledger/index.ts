@@ -26,6 +26,7 @@ export {
   getAccountByCode,
   getBalance,
   getPlayerAccount,
+  getReversingTransaction,
   getTransaction,
   listEntries,
   setAccountFrozen,
@@ -39,6 +40,9 @@ export {
   IDEMPOTENCY_KEY_MIN_LENGTH,
   isValidIdempotencyKey,
 } from './idempotency';
+
+export { reverseTransaction, REVERSAL_REASON_MAX_LENGTH } from './reverse';
+export type { ReverseTransactionInput } from './reverse';
 
 export {
   AccountFrozen,

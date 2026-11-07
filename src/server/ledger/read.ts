@@ -36,6 +36,8 @@ export type Transaction = {
   reversesTransactionId: string | null;
   metadata: Record<string, unknown>;
   createdAt: Date;
+  /** The transaction that reversed this one, if any. Set by the database, not by the reader. */
+  reversedByTransactionId: string | null;
   entries: LedgerEntry[];
 };
 
@@ -99,7 +101,15 @@ export async function getTransaction(transactionId: string): Promise<Transaction
     reverses_transaction_id: string | null;
     metadata: Record<string, unknown>;
     created_at: Date;
-  }>('select * from ledger_transactions where id = $1', [transactionId]);
+    reversed_by_transaction_id: string | null;
+  }>(
+    `select t.*,
+            (select r.id::text from ledger_transactions r where r.reverses_transaction_id = t.id limit 1)
+              as reversed_by_transaction_id
+       from ledger_transactions t
+      where t.id = $1`,
+    [transactionId],
+  );
 
   const row = rows[0];
   if (!row) return null;
@@ -122,6 +132,7 @@ export async function getTransaction(transactionId: string): Promise<Transaction
     reversesTransactionId: row.reverses_transaction_id,
     metadata: row.metadata,
     createdAt: row.created_at,
+    reversedByTransactionId: row.reversed_by_transaction_id,
     entries: entries.map((entry) => ({
       id: BigInt(entry.id),
       accountId: entry.account_id,
@@ -129,6 +140,18 @@ export async function getTransaction(transactionId: string): Promise<Transaction
       createdAt: entry.created_at,
     })),
   };
+}
+
+/** The transaction that reversed this one, if any. */
+export async function getReversingTransaction(
+  transactionId: string,
+): Promise<{ id: string; idempotencyKey: string } | null> {
+  const { rows } = await getPool().query<{ id: string; idempotency_key: string }>(
+    'select id, idempotency_key from ledger_transactions where reverses_transaction_id = $1',
+    [transactionId],
+  );
+  const row = rows[0];
+  return row ? { id: row.id, idempotencyKey: row.idempotency_key } : null;
 }
 
 /**
