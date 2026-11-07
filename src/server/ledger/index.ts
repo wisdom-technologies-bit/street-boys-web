@@ -33,6 +33,9 @@ export {
 } from './read';
 export type { Account, LedgerEntry, Transaction } from './read';
 
+export { summarizeReport, verifyLedger } from './verify';
+export type { VerifyCheck, VerifyFailure, VerifyReport } from './verify';
+
 export {
   assertIdempotencyKey,
   buildIdempotencyKey,
