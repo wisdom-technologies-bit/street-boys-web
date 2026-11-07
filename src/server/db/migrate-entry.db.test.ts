@@ -136,6 +136,7 @@ describe('scripts/migrate.ts, the pre-deploy entry point', () => {
       'ledger_transactions',
       'rate_limits',
       'sessions',
+      'transfers',
       'users',
     ]);
 
