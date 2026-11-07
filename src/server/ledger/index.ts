@@ -33,6 +33,9 @@ export {
 } from './read';
 export type { Account, LedgerEntry, Transaction } from './read';
 
+export { getFlowsByCategory, getMoneySupply, windowStart } from './reports';
+export type { AccountCounts, FlowRow, MoneySupply } from './reports';
+
 export { summarizeReport, verifyLedger } from './verify';
 export type { VerifyCheck, VerifyFailure, VerifyReport } from './verify';
 
