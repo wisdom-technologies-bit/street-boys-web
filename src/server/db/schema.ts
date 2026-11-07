@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -149,3 +151,68 @@ export type Session = typeof sessions.$inferSelect;
 export type AuditLogRow = typeof auditLog.$inferSelect;
 export type AppMeta = typeof appMeta.$inferSelect;
 export type NewAppMeta = typeof appMeta.$inferInsert;
+
+/**
+ * The ledger.
+ *
+ * Money lives here and nowhere else (AGENTS.md 3.1): every amount is a `bigint`
+ * of kobo, in Drizzle `mode: 'bigint'`, so TypeScript sees a bigint rather than
+ * the number that `.mode: 'number'` would give and silently round. The database
+ * enforces what the module promises: balances cannot go below zero unless the
+ * account is allowed to, the ledger cannot be edited or deleted, and a balance is
+ * written only while the ledger module has opened the gate
+ * (`SET LOCAL app.ledger_write = 'on'`). `drizzle/0002_ledger.sql` is the
+ * authority; this file mirrors it.
+ */
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    /** System, treasury and escrow accounts are looked up by this code. */
+    code: text('code').unique(),
+    /** A player has exactly one account. */
+    ownerUserId: uuid('owner_user_id').unique(),
+    /** SYSTEM_MINT only: it holds the money supply as a negative balance. */
+    allowNegative: boolean('allow_negative').notNull().default(false),
+    frozenAt: timestamp('frozen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check('accounts_kind_check', sql`${table.kind} in ('player', 'system', 'treasury', 'escrow')`),
+  ],
+);
+
+export const accountBalances = pgTable('account_balances', {
+  accountId: uuid('account_id')
+    .primaryKey()
+    .references(() => accounts.id),
+  balanceKobo: bigint('balance_kobo', { mode: 'bigint' }).notNull().default(0n),
+  version: bigint('version', { mode: 'bigint' }).notNull().default(0n),
+  allowNegative: boolean('allow_negative').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const ledgerTransactions = pgTable('ledger_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  requestFingerprint: text('request_fingerprint').notNull(),
+  category: text('category').notNull(),
+  actorUserId: uuid('actor_user_id'),
+  reversesTransactionId: uuid('reverses_transaction_id').unique(),
+  metadata: jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const ledgerEntries = pgTable('ledger_entries', {
+  id: bigserial('id', { mode: 'bigint' }).primaryKey(),
+  transactionId: uuid('transaction_id')
+    .notNull()
+    .references(() => ledgerTransactions.id),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.id),
+  /** Signed: positive increases the account, negative decreases it. */
+  amountKobo: bigint('amount_kobo', { mode: 'bigint' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

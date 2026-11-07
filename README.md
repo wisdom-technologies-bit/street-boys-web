@@ -72,6 +72,54 @@ npm run db:migrate:prod # node dist/migrate.mjs, the same migration from the bun
 
 Node runs the script's TypeScript directly, so a deploy needs no build step and no extra dependency. The script prints the outcome and the duration; it never prints a connection string, host or user.
 
+## Ledger
+
+The ledger is the only place money exists. It lives in `src/server/ledger` and
+nothing else may write to its tables (AGENTS.md 3.2). This section is for someone
+who needs to understand the rules, not the code.
+
+**Money is stored as whole kobo.** ₦1 is 100 kobo, so ₦1,250.50 is `125050`. It is
+stored as a `bigint` and never as a decimal number, because 10 kobo is not a value
+a computer can hold exactly as a fraction. Nothing in the product divides by 100
+except the formatter that shows a player their balance.
+
+**Four kinds of account.**
+
+| Kind       | What it is                                            |
+| ---------- | ----------------------------------------------------- |
+| `player`   | One per player. Holds what they earned.               |
+| `system`   | Two fixed accounts: `SYSTEM_MINT` and `SYSTEM_BURN`   |
+| `treasury` | Government money: taxes, licences, fines, remittances |
+| `escrow`   | Money held for a deal that has not finished           |
+
+**Money is created in one place and destroyed in one place.** `SYSTEM_MINT` is the
+only account that may hold a negative balance, and its balance is the total money
+in the game, written as a negative. Paying a player from it creates money.
+`SYSTEM_BURN` is where destroyed money goes and never goes negative; a player
+buying food destroys money by paying it. No other account can go below zero.
+
+**What the database guarantees, in plain English.**
+
+- Every movement has at least two entries and they add up to exactly zero, checked
+  when the transaction commits. Money cannot appear or vanish inside a movement.
+- Nothing in the ledger can be edited or deleted, ever. A mistake is fixed by
+  posting the reverse entry, so the history always says what really happened.
+- A balance can only change while the ledger module has opened its gate, so a
+  stray script or a dashboard cannot quietly edit someone's money.
+- An account cannot go below zero unless it is `SYSTEM_MINT`, and the database
+  itself refuses, not just the code.
+
+**Rules for any other module that moves money.**
+
+1. Call `postTransaction` from `@/server/ledger`. Never touch the ledger tables.
+2. Always pass an idempotency key derived from the action, such as
+   `pay:<job-session-id>`. A retry then moves money once, not twice.
+3. Always handle `InsufficientFunds`. A player can always be short, and that is a
+   normal answer, not an error to crash on.
+
+**Not built yet, on purpose:** sign-up does not create an account, there is no
+starting grant, no transfers and no routes. Those are later prompts.
+
 ## Sign-in
 
 Sign-in is email and a six-digit code, and nothing else: no password, no phone, no social provider.

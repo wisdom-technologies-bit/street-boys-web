@@ -20,12 +20,12 @@ const eslintConfig = [
       'no-restricted-syntax': [
         'error',
         {
-          selector: "Literal[value=/x-forwarded-for/i]",
+          selector: 'Literal[value=/x-forwarded-for/i]',
           message:
             'Read the client IP through src/server/http/client-ip.ts, which applies TRUSTED_PROXY_HOPS. Never read x-forwarded-for directly.',
         },
         {
-          selector: "TemplateElement[value.raw=/x-forwarded-for/i]",
+          selector: 'TemplateElement[value.raw=/x-forwarded-for/i]',
           message:
             'Read the client IP through src/server/http/client-ip.ts, which applies TRUSTED_PROXY_HOPS. Never read x-forwarded-for directly.',
         },
@@ -43,6 +43,31 @@ const eslintConfig = [
       'next-env.d.ts',
       'docs-ref/**',
     ],
+  },
+  {
+    // The ledger is one module (AGENTS.md 3.2). Outside it, only the public API may
+    // be imported: a deep import would reach past the guarantees the module exists
+    // to provide. The module itself is exempt, because inside it everything is local.
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
+    ignores: ['src/server/ledger/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              // `index` is the public API; `test-support` is fixtures for the database tests.
+              group: [
+                '@/server/ledger/*',
+                '!@/server/ledger/index',
+                '!@/server/ledger/test-support',
+              ],
+              message: 'Import the ledger through @/server/ledger, not its internals.',
+            },
+          ],
+        },
+      ],
+    },
   },
 ];
 

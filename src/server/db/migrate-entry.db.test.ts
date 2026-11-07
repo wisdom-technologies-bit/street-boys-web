@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,10 +126,14 @@ describe('scripts/migrate.ts, the pre-deploy entry point', () => {
     expect(second.status, second.output).toBe(0);
 
     expect(await publicTables()).toEqual([
+      'account_balances',
+      'accounts',
       'app_meta',
       'audit_log',
       'auth_otps',
       'characters',
+      'ledger_entries',
+      'ledger_transactions',
       'rate_limits',
       'sessions',
       'users',
@@ -148,8 +152,12 @@ describe('scripts/migrate.ts, the pre-deploy entry point', () => {
       }
     });
 
-    // Two runs, two migrations, no duplicates: the second found nothing pending.
-    expect(applied).toBe(2);
+    // Every migration file, once: the second run found nothing pending.
+    const migrationFiles = readdirSync(join(REPO_ROOT, 'drizzle')).filter((name) =>
+      name.endsWith('.sql'),
+    );
+    expect(applied).toBe(migrationFiles.length);
+    expect(applied).toBeGreaterThanOrEqual(3);
   }, 60_000);
 
   it('needs only the database variables, not the rest of the application environment', async () => {
