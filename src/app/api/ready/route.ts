@@ -14,9 +14,7 @@ import { getDb } from '@/server/db/client';
  */
 export const dynamic = 'force-dynamic';
 
-export type ReadyResponse =
-  | { status: 'ready' }
-  | { status: 'not_ready' };
+export type ReadyResponse = { status: 'ready' } | { status: 'not_ready' };
 
 export async function GET(): Promise<NextResponse<ReadyResponse>> {
   try {
