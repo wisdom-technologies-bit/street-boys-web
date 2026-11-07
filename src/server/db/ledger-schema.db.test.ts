@@ -1,4 +1,5 @@
 import { getPool } from '@/server/db/client';
+import { postTransaction } from '@/server/ledger';
 import {
   balanceOf,
   createTestPlayerAccount,
@@ -32,6 +33,8 @@ async function attemptTransaction(entries: Array<{ accountId: string; amount: bi
   const client = await getPool().connect();
   try {
     await client.query('begin');
+    // Raw inserts must open the same gate the module uses (drizzle/0003).
+    await client.query("select set_config('app.ledger_write', 'on', true)");
     const { rows } = await client.query<{ id: string }>(
       `insert into ledger_transactions (idempotency_key, request_fingerprint, category)
        values ($1, 'fingerprint', 'onboarding_grant') returning id`,
@@ -255,6 +258,78 @@ describe('ledger schema: guarantee 3 and 4, balances', () => {
           ]),
         ),
       ).rejects.toThrow(/account_balances_overdraft_check/);
+    }
+  });
+});
+
+describe('ledger schema: the insert guard', () => {
+  it('refuses a raw transaction or entry without the ledger gate', async () => {
+    const mint = await systemAccountId('SYSTEM_MINT');
+    const player = await createTestPlayerAccount('guard');
+
+    await expect(
+      getPool().query(
+        `insert into ledger_transactions (idempotency_key, request_fingerprint, category)
+         values ('unguarded', 'fingerprint', 'onboarding_grant')`,
+      ),
+    ).rejects.toThrow(/only by the ledger module/);
+
+    // And an entry, even for a transaction that was posted properly.
+    const posted = await postTransaction({
+      idempotencyKey: 'guarded-1',
+      category: 'onboarding_grant',
+      entries: [
+        { accountId: mint, amountKobo: -100n },
+        { accountId: player, amountKobo: 100n },
+      ],
+    });
+
+    await expect(
+      getPool().query(
+        'insert into ledger_entries (transaction_id, account_id, amount_kobo) values ($1, $2, 1)',
+        [posted.transactionId, player],
+      ),
+    ).rejects.toThrow(/only by the ledger module/);
+  });
+
+  it('still lets the module post, and the deferred balance trigger still fires', async () => {
+    const mint = await systemAccountId('SYSTEM_MINT');
+    const player = await createTestPlayerAccount('guard-ok');
+
+    await expect(
+      postTransaction({
+        idempotencyKey: 'guarded-2',
+        category: 'onboarding_grant',
+        entries: [
+          { accountId: mint, amountKobo: -250n },
+          { accountId: player, amountKobo: 250n },
+        ],
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+
+    // The gate being on does not weaken the balance rule.
+    const client = await getPool().connect();
+    try {
+      await client.query('begin');
+      await client.query("select set_config('app.ledger_write', 'on', true)");
+      const { rows } = await client.query<{ id: string }>(
+        `insert into ledger_transactions (idempotency_key, request_fingerprint, category)
+         values ($1, 'fingerprint', 'transfer') returning id`,
+        [`unbalanced-${crypto.randomUUID()}`],
+      );
+      for (const entry of [
+        { accountId: mint, amountKobo: '-100' },
+        { accountId: player, amountKobo: '90' },
+      ]) {
+        await client.query(
+          'insert into ledger_entries (transaction_id, account_id, amount_kobo) values ($1, $2, $3)',
+          [rows[0]?.id, entry.accountId, entry.amountKobo],
+        );
+      }
+      await expect(client.query('commit')).rejects.toThrow(/does not balance/);
+    } finally {
+      await client.query('rollback').catch(() => {});
+      client.release();
     }
   });
 });
