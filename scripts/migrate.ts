@@ -7,12 +7,16 @@
  * a migration that runs on request is a migration that runs on every cold start
  * and eventually runs twice at once.
  *
+ * It prefers `DATABASE_URL_MIGRATE` (a direct connection) and falls back to
+ * `DATABASE_URL`, because a pooled URL can route the lock and the unlock to
+ * different backends.
+ *
  * Node runs this TypeScript directly (`node --experimental-strip-types`, default
  * from Node 22.18 / 23.6), so there is no build step for a deploy script and no
  * extra dependency in the runtime image.
  */
 import { config as loadEnv } from 'dotenv';
-import { parseEnv, requireDatabaseUrl } from '../src/server/config/env.ts';
+import { parseEnv, resolveMigrationDatabaseUrl } from '../src/server/config/env.ts';
 import { resolveSsl } from '../src/server/db/ssl.ts';
 import { runMigrations } from '../src/server/db/migrate.ts';
 
@@ -20,7 +24,8 @@ async function main(): Promise<void> {
   loadEnv({ path: ['.env.local', '.env'], quiet: true });
 
   const env = parseEnv(process.env);
-  const connectionString = requireDatabaseUrl(env);
+  // A direct connection: the advisory lock must live on one backend.
+  const connectionString = resolveMigrationDatabaseUrl(env);
 
   const started = Date.now();
   await runMigrations({

@@ -24,6 +24,12 @@ services:
         value: production
       - key: DATABASE_URL
         sync: false
+      # Direct connection for migrations: the advisory lock needs one backend.
+      # Leave unset (the key may be added without a value) to fall back to DATABASE_URL.
+      - key: DATABASE_URL_MIGRATE
+        sync: false
+      - key: IP_HASH_PEPPER
+        sync: false
       - key: DB_POOL_MAX
         value: "10"
       - key: TRUSTED_PROXY_HOPS

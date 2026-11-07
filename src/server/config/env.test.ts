@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { EnvError, getEnv, parseEnv, requireDatabaseUrl, resetEnvCache } from './env';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  EnvError,
+  getEnv,
+  parseEnv,
+  requireDatabaseUrl,
+  requireIpHashPepper,
+  resetEnvCache,
+  resolveMigrationDatabaseUrl,
+} from './env';
 
 const SECRET_LOOKING = 'postgresql://someone:hunter2@db.example:5432/app';
 
@@ -72,11 +80,13 @@ describe('parseEnv', () => {
 
 describe('getEnv', () => {
   it('caches the parsed environment', () => {
+    vi.stubEnv('IP_HASH_PEPPER', 'x'.repeat(32));
     resetEnvCache();
     const first = getEnv();
     const second = getEnv();
     expect(second).toBe(first);
     resetEnvCache();
+    vi.unstubAllEnvs();
   });
 });
 
@@ -90,5 +100,55 @@ describe('requireDatabaseUrl', () => {
     const env = parseEnv({});
     expect(() => requireDatabaseUrl(env)).toThrow(/DATABASE_URL/);
     expect(() => requireDatabaseUrl(env)).toThrow(EnvError);
+  });
+});
+
+describe('resolveMigrationDatabaseUrl', () => {
+  it('prefers the direct migration URL when it is set', () => {
+    const env = parseEnv({
+      DATABASE_URL: 'postgresql://app:secret@pooler.example:5432/app',
+      DATABASE_URL_MIGRATE: 'postgresql://app:secret@direct.example:5432/app',
+    });
+    expect(resolveMigrationDatabaseUrl(env)).toBe(
+      'postgresql://app:secret@direct.example:5432/app',
+    );
+  });
+
+  it('falls back to DATABASE_URL when no migration URL is set', () => {
+    const env = parseEnv({ DATABASE_URL: 'postgresql://app:secret@pooler.example:5432/app' });
+    expect(resolveMigrationDatabaseUrl(env)).toBe(
+      'postgresql://app:secret@pooler.example:5432/app',
+    );
+  });
+
+  it('fails with a message naming the variable when neither is set', () => {
+    const env = parseEnv({});
+    expect(() => resolveMigrationDatabaseUrl(env)).toThrow(/DATABASE_URL/);
+  });
+
+  it('never puts a connection value in the error it throws', () => {
+    const env = parseEnv({ DATABASE_URL_MIGRATE: '' });
+    try {
+      resolveMigrationDatabaseUrl(env);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(String(error)).not.toContain('secret');
+    }
+  });
+});
+
+describe('requireIpHashPepper', () => {
+  it('returns the pepper when it is long enough', () => {
+    const env = parseEnv({ IP_HASH_PEPPER: 'x'.repeat(32) });
+    expect(requireIpHashPepper(env)).toHaveLength(32);
+  });
+
+  it('rejects a pepper shorter than 32 characters', () => {
+    expect(() => parseEnv({ IP_HASH_PEPPER: 'too-short' })).toThrow(/IP_HASH_PEPPER/);
+  });
+
+  it('fails at the point of use when the pepper is missing, without printing anything', () => {
+    const env = parseEnv({});
+    expect(() => requireIpHashPepper(env)).toThrow(/IP_HASH_PEPPER/);
   });
 });

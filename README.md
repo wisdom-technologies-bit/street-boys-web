@@ -78,10 +78,12 @@ Names only in the repository; values only in the platform's environment settings
 | ------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                                                                              | yes                | Postgres connection string (Neon pooled endpoint in production)                                               |
 | `DATABASE_URL_TEST`                                                                         | yes, by tests only | A separate, disposable database for the integration tests                                                     |
+| `DATABASE_URL_MIGRATE`                                                                      | migrations only    | A **direct** connection for `npm run db:migrate`. Falls back to `DATABASE_URL` when unset                     |
 | `DATABASE_SSL`                                                                              | yes                | `require` or `disable`. Unset follows the URL's `sslmode`                                                     |
 | `DB_POOL_MAX`                                                                               | yes                | Maximum pool connections. Default 5                                                                           |
 | `TRUSTED_PROXY_HOPS`                                                                        | yes                | Proxy hops trusted when reading `x-forwarded-for`. Default 1                                                  |
 | `CRON_SECRET`                                                                               | yes                | Bearer secret for `POST /api/internal/jobs/run`. Empty means the endpoint refuses everything                  |
+| `IP_HASH_PEPPER`                                                                            | yes                | Pepper for account HMACs. 32+ characters. Changing it invalidates every stored hash                           |
 | `SESSION_SECRET`, `OTP_HASH_PEPPER`, `PAYSTACK_*`, `REALTIME_SERVICE_TOKEN`, `ADMIN_EMAILS` | **no**             | Declared ahead of the prompts that need them. Unused. Top-ups stay off until the lawyer review passes (D-129) |
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.

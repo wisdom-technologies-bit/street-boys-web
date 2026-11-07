@@ -1,4 +1,5 @@
 import { config as loadEnv } from 'dotenv';
+import { applyTestEnv } from './test-env';
 
 /**
  * Runs before every database test file, in the worker that runs it.
@@ -8,6 +9,9 @@ import { config as loadEnv } from 'dotenv';
  * can never touch a database that matters.
  */
 loadEnv({ path: ['.env.test', '.env.local', '.env'], quiet: true });
+
+// A fixed pepper, so a database test never depends on the shell.
+applyTestEnv();
 
 const testUrl = process.env.DATABASE_URL_TEST;
 if (!testUrl) {
