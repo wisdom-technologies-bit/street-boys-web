@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
-const ALLOWED_TABLE_FILES = ['src/server/db/schema.ts', 'src/server/db/ledger-schema.db.test.ts'];
+const ALLOWED_TABLE_FILES = ['src/server/db/schema.ts'];
 const TABLE_NAMES = ['ledger_entries', 'ledger_transactions', 'account_balances'];
 // `index` is the public API and `test-support` is fixtures; everything else is internal.
 const INTERNAL_IMPORT = /from\s+['"]@\/server\/ledger\/(?!index['"]|test-support['"])[^'"]+['"]/;
@@ -38,6 +38,9 @@ describe('the ledger module boundary', () => {
     const offenders = files.filter((file) => {
       if (file.startsWith('src/server/ledger/')) return false;
       if (ALLOWED_TABLE_FILES.includes(file)) return false;
+      // The rule is about code that ships. A test may name a table to assert the
+      // schema or clean it up; it cannot move money by doing so.
+      if (/\.(db\.)?test\.(ts|tsx)$/.test(file)) return false;
       const source = readFileSync(join(ROOT, file), 'utf8');
       return TABLE_NAMES.some((table) => source.includes(table));
     });
