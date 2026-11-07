@@ -477,4 +477,36 @@ async function loadReceiverFromPool(toName: string): Promise<ReceiverRow> {
   return { ...receiver, account_id: wallet.id };
 }
 
+export type SendLimits = {
+  tier: string;
+  minTransferKobo: bigint;
+  maxPerTransferKobo: bigint;
+  maxSendPer24hKobo: bigint;
+  sendRemainingKobo: bigint;
+  pendingThresholdKobo: bigint;
+  taxFreeBandKobo: bigint;
+  taxRateBps: number;
+};
+
+/** What this player may send right now, for the send page's own guard rails. */
+export async function getSendLimits(userId: string): Promise<SendLimits> {
+  const sender = await loadSenderFromPool(userId);
+  const { tier } = resolveTier({
+    createdAt: sender.created_at,
+    verificationLevel: sender.verification_level,
+  });
+  const totals = await rollingTotals(getPool(), sender.id);
+
+  return {
+    tier: tier.name,
+    minTransferKobo: TRANSFER_PARAMS.minTransferKobo,
+    maxPerTransferKobo: tier.maxPerTransferKobo,
+    maxSendPer24hKobo: tier.maxSendPer24hKobo,
+    sendRemainingKobo: sendRemaining(tier, totals),
+    pendingThresholdKobo: tier.pendingThresholdKobo,
+    taxFreeBandKobo: TRANSFER_PARAMS.taxBands[0]?.upToKobo ?? 0n,
+    taxRateBps: TRANSFER_PARAMS.taxBands[1]?.rateBps ?? 0,
+  };
+}
+
 export type { TransferTier };
