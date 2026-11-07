@@ -123,30 +123,18 @@ export function parseNairaToKobo(input: string): Kobo {
 }
 
 /**
- * Kobo as a plain naira decimal string, for storage, comparison and API fields
- * that want naira. No separators, always two decimals, never a `number`.
+ * Formatting lives in `@/shared/money-format`, because a page and an API must write
+ * the same string and the page cannot import the server module. Re-exported here so
+ * the ledger keeps one import for callers and existing tests keep working: the
+ * functions take a plain `bigint` of kobo, which a `Kobo` is.
  */
-export function koboToNairaString(amount: Kobo): string {
-  const negative = amount < 0n;
-  const absolute = negative ? -amount : amount;
-  const whole = absolute / KOBO_PER_NAIRA;
-  const fraction = absolute % KOBO_PER_NAIRA;
-  return `${negative ? '-' : ''}${whole}.${fraction.toString().padStart(2, '0')}`;
-}
-
-/**
- * Kobo as money a person reads: `₦1,250.50`, or `-₦1,250.50` for a debit.
- *
- * This is the only place the division by 100 reaches a human. Thousands
- * separators are inserted by hand rather than with `toLocaleString`, because the
- * server's locale must not decide how a player's money is written.
- */
-export function formatNaira(amount: Kobo): string {
-  const negative = amount < 0n;
-  const [whole = '0', fraction = '00'] = koboToNairaString(amount).replace('-', '').split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '-' : ''}₦${grouped}.${fraction}`;
-}
+export {
+  formatNaira,
+  formatSignedNaira,
+  formatKoboString,
+  formatSignedKoboString,
+  koboToNairaString,
+} from '@/shared/money-format';
 
 /**
  * Kobo for a JSON field.
