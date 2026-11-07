@@ -231,10 +231,14 @@ const CHECKS: CheckSpec[] = [
   },
 ];
 
+/** A row count as a number: counts, not money, so exactness past 2^53 is not at stake. */
+function toCount(value: string | undefined): number {
+  return Number(value ?? '0'); // count, not money
+}
+
 async function scalarCount(client: PoolClient, sql: string): Promise<number> {
   const { rows } = await client.query<{ count: string }>(sql);
-  // count, not money: a row count is far below 2^53, so this conversion is exact.
-  return Number(rows[0]?.count ?? '0');
+  return toCount(rows[0]?.count);
 }
 
 async function sampleIds(client: PoolClient, sql: string): Promise<string[]> {
@@ -276,11 +280,10 @@ export async function verifyLedger(): Promise<VerifyReport> {
       ok: failures.length === 0,
       checkedAt: new Date().toISOString(),
       counts: {
-        // counts, not money: these are how many rows exist, not how many kobo.
-        accounts: Number(row?.accounts ?? '0'),
-        transactions: Number(row?.transactions ?? '0'),
-        entries: Number(row?.entries ?? '0'),
-        reversals: Number(row?.reversals ?? '0'),
+        accounts: toCount(row?.accounts),
+        transactions: toCount(row?.transactions),
+        entries: toCount(row?.entries),
+        reversals: toCount(row?.reversals),
       },
       failures,
     };
