@@ -203,3 +203,18 @@ export async function countCharacters(userId: string): Promise<number> {
     .where(eq(characters.userId, userId));
   return rows[0]?.count ?? 0;
 }
+
+/** The one character an account is allowed, or null. */
+export async function findCharacterByUserId(
+  userId: string,
+): Promise<{ id: string; name: string; avatar: Avatar } | null> {
+  const rows = await getDb()
+    .select({ id: characters.id, name: characters.name, avatar: characters.avatar })
+    .from(characters)
+    .where(eq(characters.userId, userId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, name: row.name, avatar: row.avatar as Avatar };
+}
