@@ -159,6 +159,23 @@ export async function getTransaction(transactionId: string): Promise<Transaction
   };
 }
 
+/**
+ * A transaction by its idempotency key, or null.
+ *
+ * The key is how another module finds what it posted without keeping the id: a
+ * transfer stores one key per leg, and reconciliation reads them back through here.
+ */
+export async function getTransactionByIdempotencyKey(
+  idempotencyKey: string,
+): Promise<Transaction | null> {
+  const { rows } = await getPool().query<{ id: string }>(
+    'select id from ledger_transactions where idempotency_key = $1',
+    [idempotencyKey],
+  );
+  const id = rows[0]?.id;
+  return id ? getTransaction(id) : null;
+}
+
 /** The transaction that reversed this one, if any. */
 export async function getReversingTransaction(
   transactionId: string,

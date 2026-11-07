@@ -29,6 +29,7 @@ export {
   getPlayerAccounts,
   getReversingTransaction,
   getTransaction,
+  getTransactionByIdempotencyKey,
   listEntries,
   listStatement,
   setAccountFrozen,
