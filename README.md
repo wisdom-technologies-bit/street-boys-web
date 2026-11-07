@@ -276,6 +276,81 @@ as "Other" rather than leaking a ledger name.
 | Statements never expose another account            | the account comes from the session; no caller-supplied account id         |
 | Amounts cross the wire as strings                  | `serializeAmount`; JSON has no bigint and a number would round            |
 | Every line carries its balance                     | window function in SQL, not a sum over the page                           |
+| One transfer per sender and idempotency key        | unique `(sender_user_id, idempotency_key)`, replayed not repeated         |
+| A refusal moves no money and writes no row         | the row, the limits and the postings share one transaction                |
+| Escrow holds exactly what is promised              | hold in, release or refund out, checked by `npm run transfers:verify`     |
+| A receiver problem is never described              | every receiver-side refusal is the same `receiver_unavailable`            |
+
+## Transfers
+
+A player sends money to another player **by name**. There is no account number, no
+list of players to browse and no way to address a wallet: the receiver is whoever
+holds that name, which is already public because a name is how players find each other.
+
+One database transaction does everything that has to agree: it locks both users in id
+order, computes the rolling 24-hour sums, writes the `transfers` row, and calls the
+ledger _inside that same transaction_ (`postTransaction({ client })`). A refusal
+therefore moves no money and leaves no row behind, and a crash cannot leave half a
+transfer.
+
+The money has three shapes:
+
+- **instant**, below the tier's pending threshold: `transfer` moves the amount to the
+  receiver, and `transfer_tax` moves the tax to TREASURY. The tax is charged **on top**
+  of the amount, so the receiver always gets exactly what was named.
+- **pending**, at or above the threshold: one `escrow_hold` puts amount plus tax into
+  `ESCROW_TRANSFERS` and nothing else happens for a day. The release job then pays the
+  receiver and TREASURY; the sender may cancel first, and the refund leaves escrow. If
+  a cancel and a release race, exactly one of them moves the money.
+- **refused**: insufficient funds, a limit, a bad receiver. No row, no posting, and a
+  code the page can turn into a sentence.
+
+Frozen or banned senders are refused. Every receiver-side problem (no such name,
+banned, frozen, over their own limit) answers with the same `receiver_unavailable`:
+telling a prober which one it was would turn the send form into a way to check who
+exists and who is in trouble.
+
+### The numbers
+
+`src/server/config/transfer-params.ts` is the only place a transfer number lives:
+tiers (per-transfer, per-day send and receive), the pending threshold and its delay,
+the minimum, the tax bands and the rate limits. It is Zod-validated, versioned, and
+every value that did not come from `docs/14` is marked PLACEHOLDER. No route, page or
+test invents one; the tests import the same object.
+
+Tax is marginal and computed on `bigint` kobo with floor rounding, so no kobo is lost
+to a floating point. Limits are rolling 24 hours, not calendar days, so a day cannot be
+spent twice across midnight.
+
+### What a player can see
+
+`GET /api/transfers` returns the caller's own transfers, newest first, paged by
+cursor. `GET /api/transfers/limits` says what they may send today, computed from the
+same rolling window the send path enforces. There is no endpoint that takes another
+player's id, no leaderboard and no public balance.
+
+### Jobs
+
+`POST /api/internal/jobs/run` (`CRON_SECRET`) runs the registry in
+`src/server/jobs/registry.ts` behind a transaction-scoped advisory lock, so a scheduler
+may call it often and from several instances. It answers
+`{ ran, skipped, jobs: [{ name, ok, released }] }`. Today the registry holds one job,
+`transfers.release`.
+
+### Reconciling
+
+`npm run transfers:verify` checks what the ledger cannot know on its own: escrow equals
+the pending transfers, every transfer has its postings, every posting's amount matches
+its row, no pending transfer lacks a deadline, and every status has the posting it
+needs. It prints counts and sampled ids only and exits 1 when anything disagrees. The
+ledger verifier now also insists that `ESCROW_TRANSFERS` exists, alongside the three
+accounts it already checked.
+
+### Open questions
+
+Receiver-flow caps (A to B against B to A), transfer notes, and whether the tax should
+really be destroyed rather than paid to TREASURY (docs/14 §4 says destroyed, D-160 says
+TREASURY) are logged for docs/13 in the pull request.
 
 ## Sign-in
 
