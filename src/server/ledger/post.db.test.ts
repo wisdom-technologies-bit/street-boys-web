@@ -62,10 +62,13 @@ describe('postTransaction: the happy paths', () => {
     expect(result.replayed).toBe(false);
     expect(await balanceOf(player)).toBe(15000n);
     expect(await balanceOf(mint)).toBe(-15000n);
-    expect(result.balances).toEqual([
-      { accountId: mint, balanceKobo: -15000n },
-      { accountId: player, balanceKobo: 15000n },
-    ]);
+    // Balances come back ordered by account id, not by entry order.
+    expect(
+      Object.fromEntries(result.balances.map((row) => [row.accountId, row.balanceKobo])),
+    ).toEqual({
+      [mint]: -15000n,
+      [player]: 15000n,
+    });
   });
 
   it('moves money between two players and touches nothing else', async () => {
