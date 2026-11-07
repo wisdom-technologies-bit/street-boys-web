@@ -117,6 +117,21 @@ buying food destroys money by paying it. No other account can go below zero.
 3. Always handle `InsufficientFunds`. A player can always be short, and that is a
    normal answer, not an error to crash on.
 
+**Idempotency keys name an action, not an attempt.** Two rules, both enforced:
+
+- **A retry MUST reuse the same key.** That is what makes it a retry: the second call
+  finds the key and replays the original result instead of paying twice.
+- **A different operation MUST use a different key.** `buildIdempotencyKey(namespace, ...parts)`
+  builds one deterministically, for example `job-shift:<shiftId>`, so the same action
+  always produces the same key and two actions cannot collide.
+
+A key is 8 to 128 characters of `A-Z a-z 0-9 : _ . -`; anything else is refused at the
+call site with a typed error rather than stored. Metadata is **not** part of what a key
+identifies: replaying a key with the same entries but different metadata returns the
+original transaction, unchanged, because the money is the intent and the note is not.
+The same key with **different entries** is a bug at the call site and throws
+`IdempotencyConflict`, changing nothing.
+
 **Not built yet, on purpose:** sign-up does not create an account, there is no
 starting grant, no transfers and no routes. Those are later prompts.
 

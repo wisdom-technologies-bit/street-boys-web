@@ -11,6 +11,7 @@ import {
   InsufficientFunds,
   LedgerValidationError,
 } from './errors';
+import { assertIdempotencyKey } from './idempotency';
 import { kobo, type Kobo } from './money';
 
 /**
@@ -136,6 +137,9 @@ function normalize(input: PostTransactionInput): NormalizedRequest {
       'unknown_category',
     );
   }
+
+  // The format is part of the contract, so it is checked with the rest of the input.
+  assertIdempotencyKey(request.idempotencyKey);
 
   const seen = new Set<string>();
   for (const entry of request.entries) {

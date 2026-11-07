@@ -25,7 +25,9 @@ export class LedgerValidationError extends LedgerError {
       | 'too_many_entries'
       | 'too_few_entries'
       | 'amount_too_large'
-      | 'unsafe_metadata',
+      | 'unsafe_metadata'
+      | 'invalid_idempotency_key'
+      | 'invalid_reversal',
   ) {
     super(message);
   }

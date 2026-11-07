@@ -64,7 +64,7 @@ describe('reading transactions and entries', () => {
     const account = await createPlayerAccount(crypto.randomUUID());
 
     const posted = await postTransaction({
-      idempotencyKey: 'read-1',
+      idempotencyKey: 'read-0001',
       category: 'onboarding_grant',
       entries: [
         { accountId: mint, amountKobo: -2500n },
@@ -88,7 +88,7 @@ describe('reading transactions and entries', () => {
 
     for (let index = 0; index < 3; index += 1) {
       await postTransaction({
-        idempotencyKey: `page-${index}`,
+        idempotencyKey: `page-000${index}`,
         category: 'onboarding_grant',
         entries: [
           { accountId: mint, amountKobo: -1000n },

@@ -33,6 +33,14 @@ export {
 export type { Account, LedgerEntry, Transaction } from './read';
 
 export {
+  assertIdempotencyKey,
+  buildIdempotencyKey,
+  IDEMPOTENCY_KEY_MAX_LENGTH,
+  IDEMPOTENCY_KEY_MIN_LENGTH,
+  isValidIdempotencyKey,
+} from './idempotency';
+
+export {
   AccountFrozen,
   AccountNotFound,
   IdempotencyConflict,
