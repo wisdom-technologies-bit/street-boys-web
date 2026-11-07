@@ -29,9 +29,12 @@ export {
   getReversingTransaction,
   getTransaction,
   listEntries,
+  listStatement,
   setAccountFrozen,
+  STATEMENT_DEFAULT_LIMIT,
+  STATEMENT_MAX_LIMIT,
 } from './read';
-export type { Account, LedgerEntry, Transaction } from './read';
+export type { Account, LedgerEntry, StatementEntry, StatementPage, Transaction } from './read';
 
 export { getFlowsByCategory, getMoneySupply, windowStart } from './reports';
 export type { AccountCounts, FlowRow, MoneySupply } from './reports';
