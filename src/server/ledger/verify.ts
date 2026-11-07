@@ -233,6 +233,7 @@ const CHECKS: CheckSpec[] = [
 
 async function scalarCount(client: PoolClient, sql: string): Promise<number> {
   const { rows } = await client.query<{ count: string }>(sql);
+  // count, not money: a row count is far below 2^53, so this conversion is exact.
   return Number(rows[0]?.count ?? '0');
 }
 
@@ -275,6 +276,7 @@ export async function verifyLedger(): Promise<VerifyReport> {
       ok: failures.length === 0,
       checkedAt: new Date().toISOString(),
       counts: {
+        // counts, not money: these are how many rows exist, not how many kobo.
         accounts: Number(row?.accounts ?? '0'),
         transactions: Number(row?.transactions ?? '0'),
         entries: Number(row?.entries ?? '0'),
