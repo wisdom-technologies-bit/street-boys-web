@@ -151,9 +151,9 @@ export function formatNaira(amount: Kobo): string {
 /**
  * Kobo for a JSON field.
  *
- * A string, because `JSON.stringify(10n)` throws and `Number(10n)` is the
- * precision loss this module exists to prevent. An API that returns money must
- * return this string and say so.
+ * A string, because `JSON.stringify(10n)` throws and coercing a bigint through the
+ * Number constructor is the precision loss this module exists to prevent. An API
+ * that returns money must return this string and say so.
  */
 export function serializeAmount(amount: Kobo): string {
   return amount.toString();
