@@ -1,5 +1,5 @@
 import { clearedSessionCookie, revokeSession } from '@/server/accounts/session';
-import { guardMutation, jsonResponse } from '@/server/http/guard';
+import { NO_STORE, guardMutation } from '@/server/http/guard';
 
 /**
  * POST /api/auth/logout
@@ -27,5 +27,6 @@ export async function POST(request: Request): Promise<Response> {
     ...(cookie.options.secure ? ['Secure'] : []),
   ].join('; ');
 
-  return jsonResponse({}, 204, { 'Set-Cookie': serialised });
+  // 204 has no body, so this is a bare Response rather than a JSON one.
+  return new Response(null, { status: 204, headers: { ...NO_STORE, 'Set-Cookie': serialised } });
 }

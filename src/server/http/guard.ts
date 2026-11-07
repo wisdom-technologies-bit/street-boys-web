@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getEnv, requireAppOrigin } from '@/server/config/env';
-import { resolveClientIp } from './client-ip';
+import { FORWARDED_FOR_HEADER, REAL_IP_HEADER, resolveClientIp } from './client-ip';
 
 /**
  * The request guard for the sign-in routes.
@@ -92,8 +92,8 @@ export function guardMutation(request: Request): GuardResult {
 export function clientIpFrom(request: Request): string | null {
   const env = getEnv();
   return resolveClientIp({
-    forwardedFor: request.headers.get('x-forwarded-for'),
-    remoteAddress: request.headers.get('x-real-ip'),
+    forwardedFor: request.headers.get(FORWARDED_FOR_HEADER),
+    remoteAddress: request.headers.get(REAL_IP_HEADER),
     trustedProxyHops: env.TRUSTED_PROXY_HOPS,
   });
 }

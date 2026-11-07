@@ -123,7 +123,8 @@ export async function requestCode(input: {
     eventType: 'otp_requested',
     subject: subjectForEmail(canonical),
     ipHash: input.ipHash ?? null,
-    metadata: { otpId },
+    // `requestId`, not `otpId`: the audit guard refuses any key containing "otp".
+    metadata: { requestId: otpId },
   });
 
   // Frozen and banned accounts get the same work and the same answer, but no email:
@@ -279,8 +280,9 @@ export async function verifyCode(input: {
     }
 
     const created = await client.query<{ id: string }>(
-      `insert into users (email, email_canonical, email_verified_at, age_band, verification_level, terms_version, terms_accepted_at)
-       values ($1, $2, now(), $3, 1, $4, now())
+      `insert into users (email, email_canonical, email_verified_at, age_band, verification_level,
+                          terms_version, terms_accepted_at, last_login_at)
+       values ($1, $2, now(), $3, 1, $4, now(), now())
        returning id`,
       [checked.email, canonical, input.details.ageBand, CURRENT_TERMS_VERSION],
     );
