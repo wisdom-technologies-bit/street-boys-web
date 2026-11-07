@@ -171,11 +171,14 @@ function applyEmailProviderRules(env: z.infer<typeof envSchema>): Env {
   }
 
   if (provider === 'console' && env.NODE_ENV === 'production') {
-    problems.push('EMAIL_PROVIDER: "console" is not allowed in production, because it sends nothing');
+    problems.push(
+      'EMAIL_PROVIDER: "console" is not allowed in production, because it sends nothing',
+    );
   }
 
   if (provider === 'brevo') {
-    if (!env.BREVO_API_KEY) problems.push('BREVO_API_KEY: is required when EMAIL_PROVIDER is "brevo"');
+    if (!env.BREVO_API_KEY)
+      problems.push('BREVO_API_KEY: is required when EMAIL_PROVIDER is "brevo"');
     if (!env.EMAIL_FROM_ADDRESS) {
       problems.push('EMAIL_FROM_ADDRESS: is required when EMAIL_PROVIDER is "brevo"');
     }
@@ -233,6 +236,58 @@ export function resolveMigrationDatabaseUrl(env: Env = getEnv()): string {
  * It is optional in the schema so that `next build` and a health check do not
  * need it; it is required at the point of use, like the database URL.
  */
+/**
+ * The **only** part of the environment a migration needs.
+ *
+ * A pre-deploy step runs before the new version serves traffic, and a migration
+ * touches nothing but the database: it sends no email (`EMAIL_PROVIDER`), signs no
+ * cookie (`APP_ORIGIN`, `OTP_PEPPER`) and hashes no address (`IP_HASH_PEPPER`).
+ * Validating the whole application environment there made a database migration
+ * fail because an unrelated variable was missing, which is a deploy blocked for
+ * no reason. It also means a platform only needs the database variables in place
+ * for the pre-deploy step to work.
+ */
+const migrationEnvSchema = z.object({
+  DATABASE_URL: z.string().min(1).optional(),
+  DATABASE_URL_MIGRATE: z.string().min(1).optional(),
+  DATABASE_SSL: z.enum(['require', 'disable']).optional(),
+});
+
+export type MigrationEnv = z.infer<typeof migrationEnvSchema>;
+
+/** Validate the migration's slice of the environment. Never quotes a value. */
+export function parseMigrationEnv(source: Record<string, string | undefined>): MigrationEnv {
+  const result = migrationEnvSchema.safeParse(withoutEmptyValues(source));
+
+  if (!result.success) {
+    const problems = result.error.issues.map((issue) => {
+      const name = issue.path.join('.') || '(root)';
+      return `${name}: ${issue.message}`;
+    });
+    throw new EnvError(problems);
+  }
+
+  return result.data;
+}
+
+/**
+ * The connection string a migration should use, from the migration's own slice.
+ *
+ * `DATABASE_URL_MIGRATE` wins because the advisory lock must be held on one
+ * backend, and a pooled URL may hand the lock and the unlock to two.
+ */
+export function resolveMigrationConnectionUrl(env: MigrationEnv): string {
+  if (env.DATABASE_URL_MIGRATE) return env.DATABASE_URL_MIGRATE;
+
+  if (!env.DATABASE_URL) {
+    throw new EnvError([
+      'DATABASE_URL_MIGRATE / DATABASE_URL: neither is set, so there is no database to migrate.',
+    ]);
+  }
+
+  return env.DATABASE_URL;
+}
+
 export function requireIpHashPepper(env: Env = getEnv()): string {
   if (!env.IP_HASH_PEPPER) {
     throw new EnvError([

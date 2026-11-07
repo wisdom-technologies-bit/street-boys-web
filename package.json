@@ -14,7 +14,9 @@
     "db:migrate": "node --experimental-strip-types --no-warnings scripts/migrate.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:ui": "vitest run --config vitest.ui.config.ts"
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "build:migrate": "esbuild scripts/migrate.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/migrate.mjs --external:pg-native --log-level=warning --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\"",
+    "db:migrate:prod": "node dist/migrate.mjs"
   },
   "repository": "https://github.com/wisdom-technologies-bit/street-boys-web",
   "bugs": {
@@ -38,6 +40,7 @@
     "@types/react-dom": "^19.3.0",
     "dotenv": "^18.0.9",
     "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.25.12",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.4.5",
     "jsdom": "^31.0.0",

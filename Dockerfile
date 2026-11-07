@@ -2,14 +2,21 @@
 #
 # One Dockerfile, three platforms.
 #
-#   build    compiles Next.js with `output: "standalone"`
-#   runner   the image that serves traffic: non-root, PORT from the environment
+#   deps     installs every dependency, including the dev ones the build needs
+#   build    compiles Next.js (`output: "standalone"`) and bundles the migration
+#   runner   the shipped image: non-root, PORT from the environment, no secrets
 #
-# The same image can also run the pre-deploy migration (`npm run db:migrate`),
-# because Render and Railway run that command inside the service image. That is
-# why the runner carries production `node_modules` and the `drizzle/` folder as
-# well as the standalone server. Without them a pre-deploy step would have no
-# drizzle-orm, no pg and no SQL to apply.
+# The migration is a **pre-deploy** command that a platform runs inside this
+# image, so the image has to be able to run it with production dependencies only.
+# It used to fail there with `ERR_MODULE_NOT_FOUND`, because the script imported
+# `dotenv` (a devDependency) and spoke TypeScript. It is now bundled to
+# `dist/migrate.mjs` at image build time with its dependencies inlined, so the
+# runner copies two things for it: the bundle and the SQL.
+#
+# That is also why there is no `npm ci --omit=dev` in the runner: nothing in the
+# shipped image installs from the registry, so no runtime package can be missing
+# and no devDependency can sneak into it. `docs/migrate-in-production.md` records
+# the reasoning.
 #
 # No secret is ever baked in: every value arrives as an environment variable.
 
@@ -24,12 +31,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
-
-# Only what the server and the migration script need at run time.
-FROM node:24-alpine AS prod-deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# The pre-deploy migration, as one self-contained JavaScript file.
+RUN npm run build:migrate
 
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -41,19 +44,17 @@ ENV NODE_ENV=production \
 RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 --ingroup nodejs nextjs
 
-# The standalone server and the static assets it serves.
+# The standalone server brings its own traced `node_modules`, so the image needs
+# no separate install. The static assets are not part of it.
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 
-# Pre-deploy migration: SQL, the script, and the modules it imports.
-COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+# The pre-deploy migration: one bundled file, and the SQL it applies. The script
+# resolves the folder from its own location, so `dist/` and `drizzle/` must stay
+# siblings, exactly as they are here.
+COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
-COPY --from=build --chown=nextjs:nodejs /app/scripts ./scripts
-COPY --from=build --chown=nextjs:nodejs /app/src/server/config ./src/server/config
-COPY --from=build --chown=nextjs:nodejs /app/src/server/db ./src/server/db
-COPY --from=build --chown=nextjs:nodejs /app/package.json ./package.json
-COPY --from=build --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 
 USER nextjs
 EXPOSE 3000

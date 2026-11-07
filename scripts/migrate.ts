@@ -7,30 +7,60 @@
  * a migration that runs on request is a migration that runs on every cold start
  * and eventually runs twice at once.
  *
- * It prefers `DATABASE_URL_MIGRATE` (a direct connection) and falls back to
- * `DATABASE_URL`, because a pooled URL can route the lock and the unlock to
- * different backends.
+ * Two ways to run this one file, and they must behave identically:
  *
- * Node runs this TypeScript directly (`node --experimental-strip-types`, default
- * from Node 22.18 / 23.6), so there is no build step for a deploy script and no
- * extra dependency in the runtime image.
+ * - **A developer**, with `npm run db:migrate`, which runs this TypeScript
+ *   directly through Node's type stripping.
+ * - **A production image**, with `node dist/migrate.mjs`, a bundle built at image
+ *   build time (`npm run build:migrate`). The image installs production
+ *   dependencies only, so this file and everything it imports must survive
+ *   without `dotenv`, `tsx`, `drizzle-kit` or TypeScript. See
+ *   `docs/migrate-in-production.md`.
+ *
+ * It reads `DATABASE_URL_MIGRATE` and falls back to `DATABASE_URL`, because a
+ * pooled URL can route the advisory lock and the unlock to different backends.
  */
-import { config as loadEnv } from 'dotenv';
-import { parseEnv, resolveMigrationDatabaseUrl } from '../src/server/config/env.ts';
-import { resolveSsl } from '../src/server/db/ssl.ts';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseMigrationEnv, resolveMigrationConnectionUrl } from '../src/server/config/env.ts';
+import { loadLocalEnvFile } from '../src/server/config/load-env-file.ts';
 import { runMigrations } from '../src/server/db/migrate.ts';
+import { resolveSsl } from '../src/server/db/ssl.ts';
+
+/**
+ * The migrations folder, **relative to this file** and not to the current
+ * directory.
+ *
+ * A platform runs the pre-deploy command from wherever it likes, and the script
+ * itself sits one level under the repository root in both shapes: `scripts/` for
+ * a developer, `dist/` for the bundle. Resolving from `process.cwd()` worked by
+ * luck locally and would have applied nothing, or failed obscurely, in an image.
+ */
+const MIGRATIONS_FOLDER = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'drizzle');
+
+/** Never let a connection string reach a log, whatever a driver puts in an error. */
+export function redactConnectionStrings(text: string): string {
+  return text.replace(/postgres(?:ql)?:\/\/\S+/gi, '[database URL redacted]');
+}
 
 async function main(): Promise<void> {
-  loadEnv({ path: ['.env.local', '.env'], quiet: true });
+  // Local development only: in production the platform supplies the environment.
+  loadLocalEnvFile();
 
-  const env = parseEnv(process.env);
-  // A direct connection: the advisory lock must live on one backend.
-  const connectionString = resolveMigrationDatabaseUrl(env);
+  const env = parseMigrationEnv(process.env);
+  const connectionString = resolveMigrationConnectionUrl(env);
+
+  if (!existsSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'))) {
+    throw new Error(
+      `No migrations found at ${MIGRATIONS_FOLDER}. The image must copy the drizzle folder next to this script.`,
+    );
+  }
 
   const started = Date.now();
   await runMigrations({
     connectionString,
-    migrationsFolder: './drizzle',
+    migrationsFolder: MIGRATIONS_FOLDER,
     ssl: resolveSsl(env),
     lockWaitMs: 60_000,
   });
@@ -41,6 +71,6 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error(`Migration failed: ${message}`);
+  console.error(`Migration failed: ${redactConnectionStrings(message)}`);
   process.exitCode = 1;
 });

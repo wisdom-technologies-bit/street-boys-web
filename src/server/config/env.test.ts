@@ -3,11 +3,13 @@ import {
   EnvError,
   getEnv,
   parseEnv,
+  parseMigrationEnv,
   requireAppOrigin,
   requireDatabaseUrl,
   requireIpHashPepper,
   requireOtpPepper,
   resetEnvCache,
+  resolveMigrationConnectionUrl,
   resolveMigrationDatabaseUrl,
 } from './env';
 
@@ -239,5 +241,43 @@ describe('sign-in secrets and origin', () => {
       message = (error as Error).message;
     }
     expect(message).not.toContain('super-secret-key-value');
+  });
+});
+
+describe('parseMigrationEnv', () => {
+  const url = 'postgresql://user:pass@db.example.com:5432/app';
+
+  it('accepts a database URL and nothing else', () => {
+    const env = parseMigrationEnv({ DATABASE_URL: url });
+    expect(env).toEqual({ DATABASE_URL: url });
+  });
+
+  it('does not require the email, session or pepper variables', () => {
+    // These would fail parseEnv in production; a migration needs none of them.
+    expect(parseMigrationEnv({ DATABASE_URL: url })).toEqual({ DATABASE_URL: url });
+    expect(() => parseEnv({ DATABASE_URL: url, NODE_ENV: 'production' })).toThrow();
+  });
+
+  it('treats an empty value as unset, as a dashboard would send it', () => {
+    expect(parseMigrationEnv({ DATABASE_URL: url, DATABASE_URL_MIGRATE: '' })).toEqual({
+      DATABASE_URL: url,
+    });
+  });
+
+  it('rejects a value it cannot understand, without quoting it', () => {
+    expect(() => parseMigrationEnv({ DATABASE_SSL: 'sometimes' })).toThrow(/DATABASE_SSL/);
+    expect(() => parseMigrationEnv({ DATABASE_SSL: 'sometimes' })).not.toThrow(/sometimes/);
+  });
+
+  it('prefers DATABASE_URL_MIGRATE and falls back to DATABASE_URL', () => {
+    const direct = 'postgresql://user:pass@direct.example.com:5432/app';
+    expect(resolveMigrationConnectionUrl({ DATABASE_URL: url, DATABASE_URL_MIGRATE: direct })).toBe(
+      direct,
+    );
+    expect(resolveMigrationConnectionUrl({ DATABASE_URL: url })).toBe(url);
+  });
+
+  it('refuses to migrate without any database URL', () => {
+    expect(() => resolveMigrationConnectionUrl({})).toThrow(/DATABASE_URL_MIGRATE \/ DATABASE_URL/);
   });
 });

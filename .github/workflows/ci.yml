@@ -87,3 +87,99 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The guard for the bug this job was added for: Railway's pre-deploy step died
+  # with `ERR_MODULE_NOT_FOUND` because the migration imported `dotenv`, a
+  # devDependency, and the image installs production dependencies only. Here the
+  # migration is built, dropped into a directory that has nothing but production
+  # dependencies and the built artefacts, and run against a real Postgres. If it
+  # ever needs a dev dependency, or TypeScript, or a bundler at run time, this job
+  # fails instead of a deploy.
+  migrate-production-deps:
+    name: migration with production dependencies only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: streetboys
+          POSTGRES_PASSWORD: streetboys
+          POSTGRES_DB: streetboys_migrate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U streetboys -d streetboys_migrate"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://streetboys:streetboys@127.0.0.1:5432/streetboys_migrate
+      DATABASE_SSL: disable
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install build dependencies and bundle the migration
+        run: npm ci && npm run build:migrate
+
+      - name: Assemble the image layout with production dependencies only
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/prod/dist"
+          cp package.json package-lock.json "$RUNNER_TEMP/prod/"
+          cp -a drizzle "$RUNNER_TEMP/prod/drizzle"
+          cp dist/migrate.mjs "$RUNNER_TEMP/prod/dist/migrate.mjs"
+          cd "$RUNNER_TEMP/prod"
+          npm ci --omit=dev
+          # Nothing from the repository build may leak in: this directory is all
+          # the migration is allowed to see.
+          test ! -e node_modules/dotenv
+          test ! -e node_modules/typescript
+          test ! -e node_modules/drizzle-kit
+
+      - name: Run the production migration command, twice
+        working-directory: ${{ runner.temp }}/prod
+        env:
+          NODE_ENV: production
+        run: |
+          set -euo pipefail
+          node dist/migrate.mjs
+          node dist/migrate.mjs
+
+      - name: Assert the migration ran without node_modules at all
+        working-directory: ${{ runner.temp }}/prod
+        env:
+          NODE_ENV: production
+        run: |
+          set -euo pipefail
+          # The bundle inlines its dependencies, so the runner image needs no
+          # install. Moving node_modules away proves it rather than assuming it.
+          mv node_modules node_modules.hidden
+          node dist/migrate.mjs
+          mv node_modules.hidden node_modules
+
+      - name: Assert the tables exist
+        run: |
+          set -euo pipefail
+          tables=$(psql "$DATABASE_URL" -tAc             "select string_agg(tablename, ' ' order by tablename) from pg_tables where schemaname = 'public'")
+          echo "public tables: $tables"
+          for expected in app_meta audit_log auth_otps characters rate_limits sessions users; do
+            echo "$tables" | tr ' ' '\n' | grep -qx "$expected" || {
+              echo "missing table: $expected"
+              exit 1
+            }
+          done
+          applied=$(psql "$DATABASE_URL" -tAc "select count(*) from drizzle.__drizzle_migrations")
+          echo "applied migrations: $applied"
+          test "$applied" -ge 2
