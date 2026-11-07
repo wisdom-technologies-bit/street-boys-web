@@ -84,12 +84,13 @@ describe('ledger schema: money types', () => {
 });
 
 describe('ledger schema: the accounts', () => {
-  it('seeds SYSTEM_MINT, SYSTEM_BURN and TREASURY, and only MINT may go negative', async () => {
+  it('seeds the fixed accounts, and only MINT may go negative', async () => {
     const { rows } = await getPool().query<{ code: string; kind: string; allow_negative: boolean }>(
       'select code, kind, allow_negative from accounts where code is not null order by code',
     );
 
     expect(rows).toEqual([
+      { code: 'ESCROW_TRANSFERS', kind: 'escrow', allow_negative: false },
       { code: 'SYSTEM_BURN', kind: 'system', allow_negative: false },
       { code: 'SYSTEM_MINT', kind: 'system', allow_negative: true },
       { code: 'TREASURY', kind: 'treasury', allow_negative: false },
@@ -98,7 +99,7 @@ describe('ledger schema: the accounts', () => {
     const { rows: balances } = await getPool().query<{ count: string }>(
       'select count(*)::text as count from account_balances b join accounts a on a.id = b.account_id where a.code is not null and b.balance_kobo = 0',
     );
-    expect(balances[0]?.count).toBe('3');
+    expect(balances[0]?.count).toBe('4');
   });
 
   it('gives a player exactly one account, and gives a system account a code instead of an owner', async () => {

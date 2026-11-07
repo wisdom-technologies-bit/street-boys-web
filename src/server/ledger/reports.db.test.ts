@@ -47,7 +47,7 @@ describe('getMoneySupply', () => {
       treasuryKobo: 0n,
       playersKobo: 0n,
       escrowKobo: 0n,
-      accountCounts: { players: 0, system: 2, treasury: 1, escrow: 0 },
+      accountCounts: { players: 0, system: 2, treasury: 1, escrow: 1 },
     });
   });
 
