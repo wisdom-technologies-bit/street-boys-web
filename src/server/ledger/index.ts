@@ -66,4 +66,5 @@ export {
   LedgerValidationError,
 } from './errors';
 
+export { bigintReplacer, deserializeAmount, serializeAmount } from './money';
 export type { Kobo } from './money';
