@@ -225,6 +225,58 @@ to a scheduler, with every figure as a string so no consumer rounds it.
 **Not built yet, on purpose:** sign-up does not create an account, there is no
 starting grant, no transfers and no routes. Those are later prompts.
 
+## Wallets
+
+A wallet is not a table. It is a ledger account for the player plus one starting
+grant, and `src/server/wallet` is the only code that sets it up.
+
+**One account, one grant.** `ensureWallet(userId)` creates the account through the
+ledger's idempotent `createPlayerAccount`, then posts the grant with the idempotency
+key `onboarding-grant:<userId>`. The key is derived from the user, not from a clock,
+so calling it a hundred times, twice at once, or from the backfill script pays
+exactly once. Twenty concurrent calls are a test, not an assumption.
+
+**The grant.** `onboarding_grant` is posted from `SYSTEM_MINT` to the player, which is
+how money enters the game. The amount comes from
+`src/server/config/economy-params.ts` (`startingBalanceKobo`, **PLACEHOLDER** ₦5,000
+from `street-boys-docs/docs/14-economy-numbers.md`). No other file may hold an
+economy number: change it there or not at all, and bump `version` so a grant can be
+traced to the numbers in force when it posted.
+
+**Heal on read.** `getWallet` calls `ensureWallet` first, so a player whose grant
+failed at character creation gets one the next time they open a money screen. It
+never throws into a page: a failure returns `{ setupPending: true }` and the page says
+"we are setting up your wallet". A page that crashes because a balance is missing is
+worse than a page that asks for a moment.
+
+**Character creation never fails because of the wallet.** The character is written
+first and is what the player asked for; a wallet failure is logged as
+`wallet.setup_failed` and left to the next read. There is a test that hides
+`SYSTEM_MINT` to prove it.
+
+**The backfill.** `npm run wallets:backfill` walks every active user who has a
+character and calls `ensureWallet` for each. Add `-- --dry-run` to see the count
+without writing anything. It prints counts only, never ids or email addresses, and a
+second run posts nothing.
+
+**What a player can see.** Their own balance, and their own statement, newest first,
+with the balance each entry left behind (a `SUM(amount_kobo) OVER (ORDER BY id)` in
+SQL, then the page). There is no endpoint, page or component that takes an account id
+from the caller, so there is no request shape that shows one player another's money.
+Categories are translated for the page in `src/app/copy.ts`; an unknown category reads
+as "Other" rather than leaking a ledger name.
+
+**Ledger and wallet invariants.**
+
+| Invariant                                          | How it is held                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------------- |
+| One account per player                             | unique `accounts.owner_user_id`, resolved insert in `createPlayerAccount` |
+| Exactly one grant per user, even under concurrency | unique idempotency key `onboarding-grant:<userId>`                        |
+| A wallet failure never blocks character creation   | the route catches, logs and returns 201                                   |
+| Statements never expose another account            | the account comes from the session; no caller-supplied account id         |
+| Amounts cross the wire as strings                  | `serializeAmount`; JSON has no bigint and a number would round            |
+| Every line carries its balance                     | window function in SQL, not a sum over the page                           |
+
 ## Sign-in
 
 Sign-in is email and a six-digit code, and nothing else: no password, no phone, no social provider.
@@ -465,7 +517,7 @@ The audience is a cheap Android phone on a slow Nigerian connection, so weight i
 
 | Budget                    | Target                                       |
 | ------------------------- | -------------------------------------------- |
-| **First-load JavaScript** | **under 150 KB gzipped**                     |
+| **First-load JavaScript** | **under 200 KB gzipped**                     |
 | Images on first load      | none                                         |
 | Third-party scripts       | none                                         |
 | Fonts                     | system fonts only (no webfont download)      |
@@ -475,9 +527,10 @@ The audience is a cheap Android phone on a slow Nigerian connection, so weight i
 
 | Page                                              | First-load JavaScript |
 | ------------------------------------------------- | --------------------- |
-| `/login`                                          | **190 KB**            |
-| `/create-character`                               | **187 KB**            |
-| `/home`                                           | **186 KB**            |
+| `/login`                                          | **182 KB**            |
+| `/create-character`                               | **179 KB**            |
+| `/home`                                           | **178 KB**            |
+| `/wallet`                                         | **178 KB**            |
 | `/`, `/terms`, `/privacy`, `/account-unavailable` | **176 KB**            |
 
 The floor is the problem, not the pages: an empty App Router page with no client code of its own already loads **175.9 KB**, of which three chunks account for 153 KB (React DOM, the React client runtime and the Next.js runtime). The pages in this feature add 10 to 15 KB each on top of that, and the 175 KB ceiling in the prompt cannot be met by this stack as configured.
