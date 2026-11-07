@@ -69,9 +69,41 @@ export const copy = {
   home: {
     heading: 'Home',
     balanceLabel: 'Balance',
-    balanceComingSoon: 'Balance: coming soon',
     avatarLabel: 'Your avatar',
     greeting: (name: string) => `Welcome, ${name}.`,
+    recentHeading: 'Recent money',
+  },
+
+  wallet: {
+    heading: 'Wallet',
+    balanceLabel: 'Balance',
+    statementHeading: 'Statement',
+    viewStatement: 'See all money in and out',
+    emptyStatement: 'Nothing has moved yet. Your starting money will show here.',
+    loadMore: 'Load more',
+    loadingMore: 'Loading...',
+    loadMoreFailed: 'That did not load. Try again.',
+    setupPending: 'We are setting up your wallet, please refresh in a moment',
+    restricted: 'Some actions are temporarily unavailable',
+    /**
+     * What a category is called to a player.
+     *
+     * The database holds the ledger's own names, which are implemented in
+     * `src/server/ledger` and are not language. A player should never read
+     * `onboarding_grant`: "Starting money" is what happened to them. Anything not
+     * listed falls back to "Other" rather than showing an internal word, because a
+     * new category must not become a leak of the schema.
+     */
+    categoryLabel: (category: string): string => {
+      const labels: Record<string, string> = {
+        onboarding_grant: 'Starting money',
+        reversal: 'Correction',
+        food: 'Food',
+        transport: 'Transport',
+        rent: 'Rent',
+      };
+      return labels[category] ?? 'Other';
+    },
   },
 
   unavailable: {

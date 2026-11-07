@@ -19,13 +19,21 @@
  *   formatted.
  */
 
-import { z } from 'zod';
-
 /** Kobo per naira, the one conversion this file performs. */
 const KOBO_PER_NAIRA = 100n;
 
-/** An integer string of kobo, for callers that hold the serialised form. */
-const koboString = z.string().regex(/^-?\d+$/, 'expected an integer string of kobo');
+/**
+ * An integer string of kobo, for callers that hold the serialised form.
+ *
+ * A hand-written check rather than a schema, because this module is imported by the
+ * browser and a validation library would add kilobytes to every page for one regex.
+ */
+const KOBO_STRING = /^-?\d+$/;
+
+function parseKoboString(value: string): bigint {
+  if (!KOBO_STRING.test(value)) throw new Error('expected an integer string of kobo');
+  return BigInt(value);
+}
 
 function split(amount: bigint): { negative: boolean; whole: string; fraction: string } {
   const negative = amount < 0n;
@@ -65,12 +73,12 @@ export function formatSignedNaira(amountKobo: bigint): string {
 
 /** Kobo held as an integer string, formatted. Refuses anything that is not one. */
 export function formatKoboString(amountKobo: string): string {
-  return formatNaira(BigInt(koboString.parse(amountKobo)));
+  return formatNaira(parseKoboString(amountKobo));
 }
 
 /** The signed form of a kobo string, for a statement line. */
 export function formatSignedKoboString(amountKobo: string): string {
-  return formatSignedNaira(BigInt(koboString.parse(amountKobo)));
+  return formatSignedNaira(parseKoboString(amountKobo));
 }
 
 /** Kobo as a plain decimal naira string: `1250.50`, no symbol, no separators. */

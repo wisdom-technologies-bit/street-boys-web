@@ -2,6 +2,8 @@ import { findUserById } from '@/server/accounts/repository';
 import { getEconomyParams, type EconomyParams } from '@/server/config/economy-params';
 import {
   buildIdempotencyKey,
+  listStatement,
+  type StatementEntry,
   createPlayerAccount,
   getAccountByCode,
   getBalance,
@@ -124,4 +126,54 @@ export async function getWallet(userId: string): Promise<WalletSnapshot> {
     });
     return { setupPending: true };
   }
+}
+
+export type WalletOverview = {
+  wallet: WalletSnapshot;
+  entries: StatementEntry[];
+  nextCursor: string | null;
+};
+
+/**
+ * Everything a money screen needs in one read: the balance and the first page of the
+ * statement.
+ *
+ * A page calls this rather than `getWallet` and `listStatement` separately, so the two
+ * cannot disagree about whether the wallet exists, and so a failure produces one
+ * "setting up" answer instead of a balance with no statement under it.
+ */
+export async function getWalletOverview(userId: string, limit = 20): Promise<WalletOverview> {
+  try {
+    const { accountId } = await ensureWallet(userId);
+    const [balanceKobo, account, page] = await Promise.all([
+      getBalance(accountId),
+      getPlayerAccount(userId),
+      listStatement(accountId, { limit }),
+    ]);
+
+    return {
+      wallet: { balanceKobo, restricted: account?.frozen === true },
+      entries: page.entries,
+      nextCursor: page.nextCursor,
+    };
+  } catch {
+    return { wallet: { setupPending: true }, entries: [], nextCursor: null };
+  }
+}
+
+/** A statement entry as the pages and the API hand it to the browser. */
+export function toStatementLine(entry: StatementEntry): {
+  id: string;
+  at: string;
+  amountKobo: string;
+  balanceAfterKobo: string;
+  category: string;
+} {
+  return {
+    id: entry.id.toString(),
+    at: entry.createdAt.toISOString(),
+    amountKobo: entry.amountKobo.toString(),
+    balanceAfterKobo: entry.balanceAfterKobo.toString(),
+    category: entry.category,
+  };
 }
