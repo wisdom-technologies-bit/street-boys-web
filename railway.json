@@ -10,16 +10,40 @@
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5,
-    "preDeployCommand": ["npm run db:migrate"],
+    "preDeployCommand": ["node", "dist/migrate.mjs"],
     "variables": {
-      "DATABASE_URL_MIGRATE": { "description": "Direct connection for migrations; falls back to DATABASE_URL", "required": false },
-      "IP_HASH_PEPPER": { "description": "Pepper for account HMACs, 32+ characters", "required": true },
-      "OTP_PEPPER": { "description": "Pepper for OTP code hashes, 32+ characters", "required": true },
-      "APP_ORIGIN": { "description": "Public URL of the app", "required": true },
-      "EMAIL_PROVIDER": { "description": "brevo or console; console is refused in production", "required": true },
-      "BREVO_API_KEY": { "description": "Required when EMAIL_PROVIDER is brevo", "required": false },
-      "EMAIL_FROM_ADDRESS": { "description": "Required when EMAIL_PROVIDER is brevo", "required": false },
-      "EMAIL_FROM_NAME": { "description": "Required when EMAIL_PROVIDER is brevo", "required": false }
+      "DATABASE_URL_MIGRATE": {
+        "description": "Direct connection for migrations; falls back to DATABASE_URL",
+        "required": false
+      },
+      "IP_HASH_PEPPER": {
+        "description": "Pepper for account HMACs, 32+ characters",
+        "required": true
+      },
+      "OTP_PEPPER": {
+        "description": "Pepper for OTP code hashes, 32+ characters",
+        "required": true
+      },
+      "APP_ORIGIN": {
+        "description": "Public URL of the app",
+        "required": true
+      },
+      "EMAIL_PROVIDER": {
+        "description": "brevo or console; console is refused in production",
+        "required": true
+      },
+      "BREVO_API_KEY": {
+        "description": "Required when EMAIL_PROVIDER is brevo",
+        "required": false
+      },
+      "EMAIL_FROM_ADDRESS": {
+        "description": "Required when EMAIL_PROVIDER is brevo",
+        "required": false
+      },
+      "EMAIL_FROM_NAME": {
+        "description": "Required when EMAIL_PROVIDER is brevo",
+        "required": false
+      }
     }
   }
 }

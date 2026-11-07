@@ -66,6 +66,8 @@ The script takes a **Postgres advisory lock** (`src/server/db/migrate.ts`) so tw
 
 ```bash
 npm run db:migrate    # node --experimental-strip-types scripts/migrate.ts
+npm run build:migrate # bundles it to dist/migrate.mjs, for an image with production deps only
+npm run db:migrate:prod # node dist/migrate.mjs, the same migration from the bundle
 ```
 
 Node runs the script's TypeScript directly, so a deploy needs no build step and no extra dependency. The script prints the outcome and the duration; it never prints a connection string, host or user.
@@ -139,7 +141,7 @@ No player-facing string lives in a component. They are all in `src/app/copy.ts`,
 Before the first deploy is called done:
 
 1. **Env vars set** on the platform: `DATABASE_URL`, `OTP_PEPPER`, `IP_HASH_PEPPER`, `APP_ORIGIN`, `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`. Boot fails on a missing or short value, and it refuses `EMAIL_PROVIDER=console` in production, which is deliberate: a deploy that cannot send codes should not start.
-2. **Migrations applied** as a pre-deploy step: `npm run db:migrate`. Never at startup.
+2. **Migrations applied** as a pre-deploy step: `node dist/migrate.mjs`. Never at startup.
 3. **A test sign-in** with a real address, on the deployed domain. The cookie must be `__Host-sb_session`, `Secure` and `HttpOnly`.
 4. **A test email to Gmail, Outlook and Yahoo**, each checked for landing in spam rather than the inbox. Deliverability differs by provider and only a real send tells you.
 5. **`APP_ORIGIN` matches the deployed domain**, or the origin guard refuses every sign-in with 403.
@@ -186,10 +188,18 @@ Edge runtime: every route runs on Node, because the database driver needs TCP.
 Same three commands everywhere:
 
 ```bash
-npm run build       # Next builds the standalone server
-npm run db:migrate  # pre-deploy only: applies pending SQL behind an advisory lock
-npm start           # or: node server.js inside the image
+npm run build        # Next builds the standalone server
+npm run build:migrate # bundles the migration to dist/migrate.mjs
+node dist/migrate.mjs # pre-deploy only: applies pending SQL behind an advisory lock
+npm start            # or: node server.js inside the image
 ```
+
+**The pre-deploy command is `node dist/migrate.mjs` on Railway and Render.** It is
+the bundled migration, so it runs in an image that installed production
+dependencies only: no `dotenv`, no `tsx`, no `drizzle-kit`, no TypeScript. The
+same file, before bundling, is what `npm run db:migrate` runs for a developer, so
+there is one implementation and no second copy to drift. `docs/migrate-in-production.md`
+records what the runtime image contains and why the old command failed.
 
 **Migrations never run at app start.** They are a separate step before the new
 code is promoted, guarded by `pg_advisory_lock`, so two deploys racing each other
@@ -199,7 +209,7 @@ cannot migrate twice.
 | --------- | --------------------------- | ----------------------------- | ---------------------------- |
 | Runtime   | Serverless functions (Node) | Long-running container        | Long-running container       |
 | Build     | `npm run build`, detected   | `railway.json` → `Dockerfile` | `render.yaml` → `Dockerfile` |
-| Migrate   | separate CI step or runbook | `preDeployCommand`            | `preDeployCommand`           |
+| Migrate   | separate CI step or runbook | `node dist/migrate.mjs`       | `node dist/migrate.mjs`      |
 | Health    | `/api/health`               | `healthcheckPath`             | `healthCheckPath`            |
 | Readiness | `/api/ready`                | `/api/ready`                  | `/api/ready`                 |
 | Jobs      | Vercel Cron, optional       | cron service or Actions       | cron job in `render.yaml`    |
@@ -234,7 +244,7 @@ cannot migrate twice.
    builds the `Dockerfile` and starts `node server.js`.
 2. **Variables:** `DATABASE_URL`, `DB_POOL_MAX=10`, `TRUSTED_PROXY_HOPS=1`,
    `CRON_SECRET`. Railway injects `PORT`; the image already listens on it.
-3. **Pre-deploy:** `preDeployCommand` runs `npm run db:migrate` in the same image
+3. **Pre-deploy:** `preDeployCommand` runs `node dist/migrate.mjs` in the same image
    before the new container takes traffic.
 4. **Health check:** `/api/health`, as declared in `railway.json`.
 5. **Jobs:** a Railway cron service, or GitHub Actions, calling the endpoint with
@@ -246,7 +256,7 @@ cannot migrate twice.
    service and a commented-out cron job.
 2. **Fill the `sync: false` variables** in the dashboard: `DATABASE_URL`,
    `CRON_SECRET`, and `APP_ORIGIN` for the cron job. Values are never in the file.
-3. **Pre-deploy:** `preDeployCommand: npm run db:migrate`, inside the image,
+3. **Pre-deploy:** `preDeployCommand: node dist/migrate.mjs`, inside the image,
    behind the advisory lock.
 4. **Health check:** `/api/health`, as declared.
 5. **Jobs:** enable the `street-boys-jobs` cron service in `render.yaml`, which
