@@ -1,10 +1,16 @@
 import { requirePlayer } from '@/server/accounts/require-user';
+import { getWalletOverview, toStatementLine } from '@/server/wallet';
 import { copy } from '../copy';
 import { SignOutButton } from './sign-out';
+import { WalletPanel } from '../wallet/wallet-panel';
+import { formatNaira } from '@/shared/money-format';
 
 /**
- * The home screen: who you are, and nothing you can spend yet. The balance line
- * is deliberately "coming soon" because there is no ledger in this application.
+ * The home screen: who you are, what you have, and the last few things that moved.
+ *
+ * The money block is the same component `/wallet` uses, limited to five lines with a
+ * link through to the full statement, so the two screens cannot disagree about a
+ * balance. It is loaded on the server: a player sees their money with no JavaScript.
  */
 export const dynamic = 'force-dynamic';
 export const metadata = { robots: { index: false, follow: false } };
@@ -39,8 +45,9 @@ const OUTFIT: Record<number, string> = {
 };
 
 export default async function HomePage() {
-  const { character } = await requirePlayer();
+  const { user, character } = await requirePlayer();
   const { avatar } = character;
+  const overview = await getWalletOverview(user.id, 5);
 
   return (
     <main className="page">
@@ -65,10 +72,21 @@ export default async function HomePage() {
         </p>
       </section>
 
-      <section className="card">
-        <p className="muted">{copy.home.balanceLabel}</p>
-        <p>{copy.home.balanceComingSoon}</p>
-      </section>
+      <WalletPanel
+        mode="home"
+        wallet={
+          'setupPending' in overview.wallet
+            ? { setupPending: true }
+            : {
+                balanceKobo: overview.wallet.balanceKobo.toString(),
+                formatted: formatNaira(overview.wallet.balanceKobo),
+                restricted: overview.wallet.restricted,
+              }
+        }
+        initialEntries={overview.entries.map(toStatementLine)}
+        initialCursor={overview.nextCursor}
+        limit={5}
+      />
 
       <SignOutButton />
     </main>

@@ -269,3 +269,47 @@ button:disabled {
   height: 3rem;
   border-radius: 0.75rem 0.75rem 0.25rem 0.25rem;
 }
+
+/* The statement: a list of money movements, readable on a cheap phone.
+   The amount column is right-aligned and monospaced so the digits line up, and the
+   sign is part of the text rather than a colour, so a debit is legible in sunlight
+   and to a colour-blind player. */
+.statement {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.statement li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+}
+
+.statement li:last-child {
+  border-bottom: none;
+}
+
+.statement__what {
+  font-weight: 600;
+}
+
+.statement__when {
+  color: #6b6b6b;
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.statement__amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.statement__after {
+  color: #6b6b6b;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

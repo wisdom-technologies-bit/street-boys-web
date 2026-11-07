@@ -1,5 +1,5 @@
 import { getPool } from '@/server/db/client';
-import { AccountNotFound } from './errors';
+import { AccountNotFound, LedgerValidationError } from './errors';
 import { kobo, type Kobo } from './money';
 import type { LedgerEntryInput } from './post';
 
@@ -78,6 +78,23 @@ export async function getPlayerAccount(userId: string): Promise<Account | null> 
   );
   const row = rows[0];
   return row ? toAccount(row) : null;
+}
+
+/** The player accounts among a set of user ids, keyed by user id. */
+export async function getPlayerAccounts(userIds: string[]): Promise<Map<string, Account>> {
+  if (userIds.length === 0) return new Map();
+
+  const { rows } = await getPool().query<AccountRow>(
+    "select * from accounts where kind = 'player' and owner_user_id = any($1::uuid[])",
+    [userIds],
+  );
+
+  const byUser = new Map<string, Account>();
+  for (const row of rows) {
+    const account = toAccount(row);
+    if (account.ownerUserId) byUser.set(account.ownerUserId, account);
+  }
+  return byUser;
 }
 
 /** The balance of an account, or a typed error when the account does not exist. */
@@ -199,6 +216,109 @@ export async function listEntries(
  * than failing or creating a second one. Not wired to sign-up yet: the ledger
  * prompt explicitly leaves that to a later prompt.
  */
+/** The largest page a statement may ask for. */
+export const STATEMENT_MAX_LIMIT = 50;
+/** The default page, which fits a phone screen with room for a "load more". */
+export const STATEMENT_DEFAULT_LIMIT = 20;
+
+export type StatementEntry = {
+  /** The entry's own id, which is also the cursor: entries are strictly increasing. */
+  id: bigint;
+  createdAt: Date;
+  /** Signed kobo: negative for money leaving the account. */
+  amountKobo: Kobo;
+  /** The account's balance immediately after this entry. */
+  balanceAfterKobo: Kobo;
+  category: string;
+};
+
+export type StatementPage = {
+  entries: StatementEntry[];
+  /** Pass as `beforeEntryId` for the next page, or null when there is no more. */
+  nextCursor: string | null;
+};
+
+/**
+ * One account's entries, newest first, each with the balance it left behind.
+ *
+ * The running balance is computed **in SQL**, as a window function over that
+ * account's entries in id order, and only then paged. Computing it in TypeScript
+ * from a page of entries would be wrong: a page starts mid-history, so the running
+ * total must be taken over everything before it, not over the rows that fit in the
+ * response. The window sum is over the account's whole history, so page two carries
+ * the true balance and not a partial one.
+ *
+ * Paging is by `beforeEntryId` rather than by offset: the ledger only ever appends,
+ * so an id cursor cannot skip or repeat a line when a transaction posts between two
+ * page requests. The id is a `bigserial`, so `id < before` is the same as "older
+ * than", and the `(account_id, id)` index makes it a range scan.
+ */
+export async function listStatement(
+  accountId: string,
+  options: { limit?: number; beforeEntryId?: string | null } = {},
+): Promise<StatementPage> {
+  const limit = options.limit ?? STATEMENT_DEFAULT_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > STATEMENT_MAX_LIMIT) {
+    throw new LedgerValidationError(
+      `limit must be a whole number from 1 to ${STATEMENT_MAX_LIMIT}`,
+      'invalid_request',
+    );
+  }
+
+  const before = options.beforeEntryId ?? null;
+  if (before !== null && !/^\d+$/.test(before)) {
+    throw new LedgerValidationError('beforeEntryId must be an entry id', 'invalid_request');
+  }
+
+  const { rows } = await getPool().query<{
+    id: string;
+    created_at: Date;
+    amount_kobo: string;
+    balance_after: string;
+    category: string;
+  }>(
+    `with running as (
+       select e.id,
+              e.created_at,
+              e.amount_kobo,
+              t.category,
+              sum(e.amount_kobo) over (
+                order by e.id
+                rows between unbounded preceding and current row
+              ) as balance_after
+         from ledger_entries e
+         join ledger_transactions t on t.id = e.transaction_id
+        where e.account_id = $1
+     )
+     -- id stays a bigint here and only becomes a string in TypeScript: casting it to
+     -- text in the select would make "order by id" sort 11 before 9, silently
+     -- reversing the oldest and newest lines once ids pass ten.
+     select id, created_at, amount_kobo::text, balance_after::text, category
+       from running
+      where ($2::bigint is null or id < $2::bigint)
+      order by id desc
+      limit $3`,
+    [accountId, before, limit + 1],
+  );
+
+  // One extra row is fetched only to learn whether another page exists, so the
+  // cursor is honest rather than "the page looked full".
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+
+  return {
+    entries: page.map((row) => ({
+      id: BigInt(row.id),
+      createdAt: row.created_at,
+      amountKobo: kobo(BigInt(row.amount_kobo)),
+      balanceAfterKobo: kobo(BigInt(row.balance_after)),
+      category: row.category,
+    })),
+    nextCursor: hasMore && last ? last.id : null,
+  };
+}
+
 export async function createPlayerAccount(userId: string): Promise<Account> {
   const existing = await getPlayerAccount(userId);
   if (existing) return existing;

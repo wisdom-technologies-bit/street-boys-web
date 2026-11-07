@@ -8,6 +8,9 @@ import { POST as requestCodeRoute } from '../auth/request-code/route';
 import { POST as verifyCodeRoute } from '../auth/verify-code/route';
 import { POST as logoutRoute } from '../auth/logout/route';
 import { GET as meRoute } from '../me/route';
+import { getBalance, getPlayerAccount } from '@/server/ledger';
+import { getWallet } from '@/server/wallet';
+import { seedSystemAccounts } from '@/server/ledger/test-support';
 
 /**
  * Character creation through the real route, with real sessions.
@@ -283,5 +286,56 @@ describe('the whole journey, through the routes', () => {
     );
     expect(logout.status).toBe(204);
     expect((await me()).status).toBe(401);
+  });
+});
+
+describe('the wallet after character creation', () => {
+  // The harness truncates every table between tests, so the seeded system accounts
+  // have to come back before a grant can post.
+  beforeEach(async () => {
+    await seedSystemAccounts();
+  });
+
+  it('gives the new player an account and exactly one starting grant', async () => {
+    const { token, userId } = await signUp();
+
+    const response = await create(token);
+    expect(response.status).toBe(201);
+
+    const account = await getPlayerAccount(userId);
+    expect(account).not.toBeNull();
+    expect(await getBalance(account?.id as string)).toBe(500_000n);
+    expect(await getWallet(userId)).toEqual({ balanceKobo: 500_000n, restricted: false });
+  });
+
+  it('still creates the character when the wallet cannot be set up, and logs it', async () => {
+    const { token, userId } = await signUp();
+
+    // Hide the system account the grant needs, which is the cheapest honest failure:
+    // no mock, and the account is really unable to receive its starting money.
+    await getPool().query(
+      "update accounts set code = 'SYSTEM_MINT_UNREACHABLE' where code = 'SYSTEM_MINT'",
+    );
+
+    const response = await create(token);
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual(VALID);
+
+    const characters = await getPool().query('select 1 from characters where user_id = $1', [
+      userId,
+    ]);
+    expect(characters.rowCount).toBe(1);
+
+    const events = await getPool().query<{ event_type: string }>(
+      "select event_type from audit_log where event_type = 'wallet.setup_failed'",
+    );
+    expect(events.rowCount).toBe(1);
+
+    // And the player is not stuck: the next read heals once the ledger is whole.
+    await getPool().query(
+      "update accounts set code = 'SYSTEM_MINT' where code = 'SYSTEM_MINT_UNREACHABLE'",
+    );
+    expect(await getWallet(userId)).toEqual({ balanceKobo: 500_000n, restricted: false });
   });
 });

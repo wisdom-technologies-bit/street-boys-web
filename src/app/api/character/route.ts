@@ -6,6 +6,8 @@ import {
   createCharacter,
 } from '@/server/accounts/repository';
 import { findSessionUser } from '@/server/accounts/session';
+import { ensureWallet } from '@/server/wallet';
+import { logEvent } from '@/server/security/audit';
 import { consumeRateLimit } from '@/server/security/rate-limit';
 import { clientIpFrom, errorResponse, guardMutation, jsonResponse } from '@/server/http/guard';
 
@@ -77,6 +79,26 @@ export async function POST(request: Request): Promise<Response> {
       return errorResponse('already_has_character');
     }
     throw error;
+  }
+
+  // The wallet is set up in the same request, because a player who has just made a
+  // character should see their starting money on the next screen rather than a
+  // "coming soon" placeholder.
+  //
+  // It must never fail the character creation, though: the character is already
+  // written and is the thing the player asked for, while the wallet can be finished
+  // by the next read (`getWallet` heals) or by the backfill script. So a failure is
+  // logged and swallowed here, and the player is told about the money later.
+  try {
+    await ensureWallet(user.id);
+  } catch (error) {
+    await logEvent({
+      eventType: 'wallet.setup_failed',
+      metadata: {
+        userId: user.id,
+        reason: error instanceof Error ? error.name : 'unknown',
+      },
+    });
   }
 
   return jsonResponse({ name: nameCheck.name, avatar: avatarCheck.avatar }, 201);
