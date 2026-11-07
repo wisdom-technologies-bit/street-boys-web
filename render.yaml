@@ -30,6 +30,18 @@ services:
         sync: false
       - key: IP_HASH_PEPPER
         sync: false
+      - key: OTP_PEPPER
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Street Boys
       - key: DB_POOL_MAX
         value: "10"
       - key: TRUSTED_PROXY_HOPS

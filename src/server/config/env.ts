@@ -78,9 +78,29 @@ const envSchema = z.object({
    * invalidates every stored hash, so it is a long-lived secret.
    */
   IP_HASH_PEPPER: z.string().min(32).max(500).optional(),
+
+  /**
+   * Pepper for the OTP code hash. Separate from `IP_HASH_PEPPER` on purpose: a
+   * leak of one must not help an attacker guess a code with the other. At least
+   * 32 characters.
+   */
+  OTP_PEPPER: z.string().min(32).max(500).optional(),
+
+  /** The public origin, used by the sign-in Origin guard. A full URL. */
+  APP_ORIGIN: z.string().url().optional(),
+
+  /**
+   * Which email provider sends the code. `console` prints it, and is refused in
+   * production: a code that only reaches a log is a code nobody receives.
+   */
+  EMAIL_PROVIDER: z.enum(['brevo', 'console']).optional(),
+
+  BREVO_API_KEY: z.string().min(1).max(500).optional(),
+  EMAIL_FROM_ADDRESS: z.string().email().optional(),
+  EMAIL_FROM_NAME: z.string().min(1).max(120).optional(),
 });
 
-export type Env = z.infer<typeof envSchema>;
+export type Env = z.infer<typeof envSchema> & { EMAIL_PROVIDER: 'brevo' | 'console' };
 
 /** Thrown when the environment does not validate. Never contains a value. */
 export class EnvError extends Error {
@@ -128,7 +148,45 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
     throw new EnvError(problems);
   }
 
-  return result.data;
+  return applyEmailProviderRules(result.data);
+}
+
+/**
+ * Resolve `EMAIL_PROVIDER` and enforce what it implies.
+ *
+ * Three rules, all of them refusing rather than guessing:
+ * - production must name a provider, because `console` there means nobody gets a
+ *   code and the failure would be silent;
+ * - `brevo` needs its key and a sender;
+ * - everywhere else the default is `console`, which is the local development
+ *   experience and prints the code to the terminal.
+ */
+function applyEmailProviderRules(env: z.infer<typeof envSchema>): Env {
+  const problems: string[] = [];
+
+  const provider = env.EMAIL_PROVIDER ?? (env.NODE_ENV === 'production' ? undefined : 'console');
+
+  if (!provider) {
+    problems.push('EMAIL_PROVIDER: must be set in production ("brevo" or "console")');
+  }
+
+  if (provider === 'console' && env.NODE_ENV === 'production') {
+    problems.push('EMAIL_PROVIDER: "console" is not allowed in production, because it sends nothing');
+  }
+
+  if (provider === 'brevo') {
+    if (!env.BREVO_API_KEY) problems.push('BREVO_API_KEY: is required when EMAIL_PROVIDER is "brevo"');
+    if (!env.EMAIL_FROM_ADDRESS) {
+      problems.push('EMAIL_FROM_ADDRESS: is required when EMAIL_PROVIDER is "brevo"');
+    }
+    if (!env.EMAIL_FROM_NAME) {
+      problems.push('EMAIL_FROM_NAME: is required when EMAIL_PROVIDER is "brevo"');
+    }
+  }
+
+  if (problems.length > 0) throw new EnvError(problems);
+
+  return { ...env, EMAIL_PROVIDER: provider ?? 'console' };
 }
 
 let cached: Env | undefined;
@@ -182,4 +240,22 @@ export function requireIpHashPepper(env: Env = getEnv()): string {
     ]);
   }
   return env.IP_HASH_PEPPER;
+}
+
+/** The OTP pepper, required wherever a code hash is produced or compared. */
+export function requireOtpPepper(env: Env = getEnv()): string {
+  if (!env.OTP_PEPPER) {
+    throw new EnvError([
+      'OTP_PEPPER: is not set. Generate 32 or more random characters and set it in the environment.',
+    ]);
+  }
+  return env.OTP_PEPPER;
+}
+
+/** The public origin, required by the sign-in guard. */
+export function requireAppOrigin(env: Env = getEnv()): string {
+  if (!env.APP_ORIGIN) {
+    throw new EnvError(['APP_ORIGIN: is not set. It is the public URL of this app.']);
+  }
+  return env.APP_ORIGIN;
 }

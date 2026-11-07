@@ -22,6 +22,13 @@
  * enforces that: the header name is a lint error outside this file.
  */
 
+/**
+ * The header names, exported so no other module has to spell them out. The lint
+ * rule against the literal is deliberate: it keeps this file the only reader.
+ */
+export const FORWARDED_FOR_HEADER = 'x-forwarded-for';
+export const REAL_IP_HEADER = 'x-real-ip';
+
 export type ClientIpInput = {
   /** The raw `x-forwarded-for` header, or null when absent. */
   forwardedFor: string | null | undefined;

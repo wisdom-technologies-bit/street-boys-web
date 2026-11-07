@@ -70,6 +70,38 @@ npm run db:migrate    # node --experimental-strip-types scripts/migrate.ts
 
 Node runs the script's TypeScript directly, so a deploy needs no build step and no extra dependency. The script prints the outcome and the duration; it never prints a connection string, host or user.
 
+## Sign-in
+
+Sign-in is email and a six-digit code, and nothing else: no password, no phone, no social provider.
+
+1. `POST /api/auth/request-code` with `{ "email": "..." }`. The answer is always `{ "status": "sent" }` for an address we accept, whether or not an account exists, so this route cannot be used to find out who is registered.
+2. The player receives "Your Street Boys code", which expires in 10 minutes.
+3. `POST /api/auth/verify-code` with `{ "email": "...", "code": "123456" }`.
+4. A new address gets `{ "status": "details_required" }` and the code is still usable: the same digits come back with `details: { "acceptTerms": true, "ageBand": "18_plus" }` and the account is created.
+5. The session arrives as a cookie, `HttpOnly`, `SameSite=Lax`, `Secure` and `__Host-sb_session` in production, which lasts 30 days of use and never more than 90 days from sign-in. Five sessions per account: a sixth revokes the oldest.
+6. `GET /api/me` returns the player, or 401. `POST /api/auth/logout` revokes the session and is safe to repeat. Every auth response carries `Cache-Control: no-store`.
+
+A frozen or banned account is refused on every request, not just at sign-in, so a freeze takes effect on the next click.
+
+### Email setup
+
+The owner-facing half of the same feature. Two providers exist and the environment picks one: `console` prints the code to the server log and is refused in production, `brevo` sends it.
+
+1. Create a Brevo account and an API key from **SMTP and API → API keys**. Put it in `BREVO_API_KEY`.
+2. Add and **validate a sender** address under **Senders, Domains and IPs**. It goes in `EMAIL_FROM_ADDRESS`, with the name a player sees in `EMAIL_FROM_NAME`.
+3. **Authenticate the sending domain** before launch: SPF, DKIM and DMARC. An unauthenticated domain lands in spam, and a code in spam is a player who cannot sign in. Brevo shows the DNS records to add.
+4. Brevo's free plan allows **300 emails a day**. That is a beta limit, not a production one: at 300 sign-ins a day every further request fails and, by design, returns `send_failed` rather than a code that never arrives. Move to a paid plan before a launch push.
+
+### Signing in locally
+
+Leave `EMAIL_PROVIDER` unset (it defaults to `console`), set `APP_ORIGIN=http://localhost:3000`, then request a code and read it in the terminal:
+
+```
+curl -X POST http://localhost:3000/api/auth/request-code -H 'content-type: application/json' -H 'origin: http://localhost:3000' -d '{"email":"you@example.com"}'
+```
+
+The code appears as `[dev email] Your Street Boys code -> you@example.com: 123456`. The `origin` header is required: the guard refuses a request without one.
+
 ## Environment variables
 
 Names only in the repository; values only in the platform's environment settings or in a gitignored `.env.local`. `.env.example` documents every name.
@@ -84,6 +116,9 @@ Names only in the repository; values only in the platform's environment settings
 | `TRUSTED_PROXY_HOPS`                                                                        | yes                | Proxy hops trusted when reading `x-forwarded-for`. Default 1                                                  |
 | `CRON_SECRET`                                                                               | yes                | Bearer secret for `POST /api/internal/jobs/run`. Empty means the endpoint refuses everything                  |
 | `IP_HASH_PEPPER`                                                                            | yes                | Pepper for account HMACs. 32+ characters. Changing it invalidates every stored hash                           |
+| `EMAIL_PROVIDER`                                                                            | yes                | `brevo` or `console`. Required in production; `console` is refused there                                      |
+| `EMAIL_FROM_ADDRESS`                                                                        | with brevo         | A validated sender address                                                                                    |
+| `EMAIL_FROM_NAME`                                                                           | with brevo         | The sender name a player sees                                                                                 |
 | `SESSION_SECRET`, `OTP_HASH_PEPPER`, `PAYSTACK_*`, `REALTIME_SERVICE_TOKEN`, `ADMIN_EMAILS` | **no**             | Declared ahead of the prompts that need them. Unused. Top-ups stay off until the lawyer review passes (D-129) |
 
 No secret, key or connection string is ever committed. `.env*` is gitignored except `.env.example`.
