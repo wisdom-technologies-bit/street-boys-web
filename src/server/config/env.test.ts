@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EnvError, getEnv, parseEnv, requireDatabaseUrl, requireIpHashPepper, resetEnvCache, resolveMigrationDatabaseUrl } from './env';
+import {
+  EnvError,
+  getEnv,
+  parseEnv,
+  requireDatabaseUrl,
+  requireIpHashPepper,
+  resetEnvCache,
+  resolveMigrationDatabaseUrl,
+} from './env';
 
 const SECRET_LOOKING = 'postgresql://someone:hunter2@db.example:5432/app';
 
@@ -108,7 +116,9 @@ describe('resolveMigrationDatabaseUrl', () => {
 
   it('falls back to DATABASE_URL when no migration URL is set', () => {
     const env = parseEnv({ DATABASE_URL: 'postgresql://app:secret@pooler.example:5432/app' });
-    expect(resolveMigrationDatabaseUrl(env)).toBe('postgresql://app:secret@pooler.example:5432/app');
+    expect(resolveMigrationDatabaseUrl(env)).toBe(
+      'postgresql://app:secret@pooler.example:5432/app',
+    );
   });
 
   it('fails with a message naming the variable when neither is set', () => {
