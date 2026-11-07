@@ -132,6 +132,96 @@ original transaction, unchanged, because the money is the intent and the note is
 The same key with **different entries** is a bug at the call site and throws
 `IdempotencyConflict`, changing nothing.
 
+**Nothing writes a ledger row without the module.** A transaction and every entry in
+it can only be inserted while the ledger module has opened its gate
+(`app.ledger_write`); the database refuses everything else with "ledger rows are
+written only by the ledger module". This is aimed at accidents: a repair script, a
+migration, a dashboard, a future agent deciding to "just add the starting grant
+here". It is **not** a defence against the table owner, who can disable a trigger or
+set the setting themselves. That boundary needs a least-privilege database role,
+which is a later task; until then the verifier is what notices.
+
+### Reversals
+
+Money is never edited. A mistake is undone by **reversing the transaction**, which
+posts a new transaction whose entries are the exact negation of the original's, in
+category `reversal`, with `reverses_transaction_id` pointing at what it undid. Both
+facts stay in the history: what happened, and that it was undone, by whom, and why.
+
+- **Once only.** `reverses_transaction_id` is unique in the database, so two
+  simultaneous reversal attempts cannot both succeed. A reversal of a reversal is
+  refused: undoing an undo is a new forward transaction with its own reason.
+- **Never below zero.** If the money has already been spent, the reversal is refused
+  with `InsufficientFundsForReversal` and **nothing is written.** What happens to the
+  shortfall is a product decision that is still open (see docs/13).
+- **Attributed.** An actor and a non-empty reason (at most 500 characters) are
+  required and stored in the transaction's metadata.
+- **Frozen accounts still owe.** A frozen account cannot spend, but it must be able
+  to give money back, so a reversal (or an admin adjustment) may pass
+  `allowFrozenDebit` **only with an actor**, and every use writes a
+  `ledger_frozen_debit_override` audit event. **Who is allowed to ask for this is an
+  authorization question that belongs to the admin prompt, not to this module**;
+  until then the option exists, is audited, and is not exposed to any player.
+
+### The verifier
+
+`verifyLedger()` checks the ledger against itself: every transaction balances and has
+at least two entries, the whole ledger sums to zero, every balance equals its entries,
+every version equals its entry count, no account without permission is negative, every
+account has a balance and every balance an account, the three system accounts exist,
+and every reversal points at a real transaction whose negation it exactly is.
+
+It reads inside one `REPEATABLE READ READ ONLY` transaction, so a report describes one
+moment even while players are earning, and it returns **ids and counts only** — enough
+to investigate, nothing personal.
+
+```bash
+npm run ledger:verify   # exit 0 when the ledger is sound, 1 when it is not
+```
+
+The same check is available to a scheduler at `POST /api/internal/ledger/verify`
+(protected by `CRON_SECRET`, once per 30 seconds, audited as `ledger_verify_run`, or
+`ledger_verify_failed` when it fails). To run it on a schedule, point the platform's
+cron at that URL with the secret as a bearer token — the schedule is deliberately left
+to the owner (D-150):
+
+| Platform       | Where the schedule goes                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Railway        | a cron service, `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/internal/ledger/verify`                                   |
+| Render         | a cron job with the same command                                                                                                                        |
+| Vercel         | `crons` in `vercel.json`, `{"path": "/api/internal/ledger/verify", "schedule": "0 * * * *"}` (Vercel sends the secret itself when `CRON_SECRET` is set) |
+| GitHub Actions | a scheduled workflow calling the same URL                                                                                                               |
+
+### What to do if the verifier fails
+
+1. **Stop money features.** Do not deploy anything that moves money, and do not
+   "fix the balance" by hand: the ledger is append-only, and a hand edit destroys the
+   only record of what went wrong.
+2. **Keep the output.** The report names the failing checks and up to 20 ids per
+   check. Copy it somewhere durable before anything else runs, including notifications.
+3. **Investigate by id, read-only.** Start from the sample ids with the read
+   functions: the transaction, its entries, the account's entries. The first entry that
+   does not explain itself is usually the bug.
+4. **Correct forward, never backward.** Once the cause is understood, the fix is a new
+   transaction (or a reversal), posted through the module, so the history keeps both
+   the fault and the repair.
+5. **Ask before deciding money is lost.** A failing `balance_mismatch` means the
+   stored balance disagrees with the entries; the entries are the truth. Whether a
+   balance is rebuilt or an account is frozen is the owner's decision, not the agent's.
+
+### Reports
+
+`getMoneySupply()` returns circulating money, net minted, net burned, and the totals
+held by players, the treasury and escrow, plus account counts — all `bigint` kobo.
+`circulating = totalMinted - totalBurned` always holds, because every balance in the
+ledger sums to zero; a test fails if it ever stops.
+
+`getFlowsByCategory({ from, to })` returns, per day and per category, how much money was
+created and destroyed. A reversal is attributed to the **original** transaction's
+category, so a mint that was reversed reads as zero instead of leaving a "reversal"
+bucket that looks like a faucet. `GET /api/internal/ledger/supply?days=30` serves both
+to a scheduler, with every figure as a string so no consumer rounds it.
+
 **Not built yet, on purpose:** sign-up does not create an account, there is no
 starting grant, no transfers and no routes. Those are later prompts.
 
