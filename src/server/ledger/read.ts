@@ -80,6 +80,23 @@ export async function getPlayerAccount(userId: string): Promise<Account | null> 
   return row ? toAccount(row) : null;
 }
 
+/** The player accounts among a set of user ids, keyed by user id. */
+export async function getPlayerAccounts(userIds: string[]): Promise<Map<string, Account>> {
+  if (userIds.length === 0) return new Map();
+
+  const { rows } = await getPool().query<AccountRow>(
+    "select * from accounts where kind = 'player' and owner_user_id = any($1::uuid[])",
+    [userIds],
+  );
+
+  const byUser = new Map<string, Account>();
+  for (const row of rows) {
+    const account = toAccount(row);
+    if (account.ownerUserId) byUser.set(account.ownerUserId, account);
+  }
+  return byUser;
+}
+
 /** The balance of an account, or a typed error when the account does not exist. */
 export async function getBalance(accountId: string): Promise<Kobo> {
   const { rows } = await getPool().query<{ balance_kobo: string }>(

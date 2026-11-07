@@ -26,6 +26,7 @@ export {
   getAccountByCode,
   getBalance,
   getPlayerAccount,
+  getPlayerAccounts,
   getReversingTransaction,
   getTransaction,
   listEntries,

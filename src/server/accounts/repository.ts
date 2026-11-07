@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import type { Avatar } from '@/server/config/avatar-options';
 import { getDb } from '@/server/db/client';
 import { characters, users } from '@/server/db/schema';
@@ -105,6 +105,38 @@ export async function createUser(input: CreateUserInput): Promise<{ id: string }
   });
 
   return row;
+}
+
+/**
+ * The ids of active users who have a character, oldest first.
+ *
+ * The wallet backfill walks this list in pages. Keyset paging (`afterId`) rather than
+ * offsets, because the table only grows: an offset would skip a player when another
+ * signs up mid-run.
+ */
+export async function listActivePlayerUserIds(options: {
+  afterId?: string | null;
+  limit?: number;
+}): Promise<{ ids: string[]; nextAfterId: string | null }> {
+  const limit = Math.min(Math.max(options.limit ?? 200, 1), 500);
+
+  const rows = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(characters, eq(characters.userId, users.id))
+    .where(
+      options.afterId
+        ? and(eq(users.status, 'active'), gt(users.id, options.afterId))
+        : eq(users.status, 'active'),
+    )
+    .orderBy(users.id)
+    .limit(limit + 1);
+
+  const page = rows.slice(0, limit).map((row) => row.id);
+  return {
+    ids: page,
+    nextAfterId: rows.length > limit ? (page[page.length - 1] ?? null) : null,
+  };
 }
 
 /** A user by id, for code that has an id and needs the status that goes with it. */
