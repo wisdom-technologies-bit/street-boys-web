@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getEnv } from '@/server/config/env';
 import { isCronRequestAuthorized } from '@/server/http/cron-auth';
+import { runDueJobs, type JobOutcome } from '@/server/jobs/registry';
 
 /**
  * POST /api/internal/jobs/run — the one door a scheduler knocks on.
@@ -10,13 +11,18 @@ import { isCronRequestAuthorized } from '@/server/http/cron-auth';
  * depends on one platform's scheduler (D-139).
  *
  * Protected by CRON_SECRET in `Authorization: Bearer <secret>`, compared in
- * constant time. If the secret is unset the route refuses every call. No jobs
- * exist yet: it reports that it ran zero of them.
+ * constant time. If the secret is unset the route refuses every call.
+ *
+ * The body names every job and what it did, so a scheduler's log is a report rather
+ * than a heartbeat: `{ ran, jobs: [{ name, ok, released }] }`. When another instance
+ * holds the run lock the answer is `{ skipped: true }` and nothing ran.
  */
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export type JobsRunResponse = { ran: number } | { error: 'not_configured' | 'unauthorized' };
+export type JobsRunResponse =
+  | { ran: number; skipped: boolean; jobs: JobOutcome[] }
+  | { error: 'not_configured' | 'unauthorized' };
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
@@ -37,6 +43,10 @@ export async function POST(request: Request): Promise<NextResponse<JobsRunRespon
     );
   }
 
-  // Jobs arrive in a later prompt. Nothing to run yet.
-  return NextResponse.json({ ran: 0 }, { status: 200, headers: NO_STORE });
+  const run = await runDueJobs();
+
+  return NextResponse.json(
+    { ran: run.jobs.length, skipped: run.skipped, jobs: run.jobs },
+    { status: 200, headers: NO_STORE },
+  );
 }

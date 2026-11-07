@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetEnvCache } from '@/server/config/env';
 
+// The registry itself is database-tested; here the route's wiring is what matters.
+vi.mock('@/server/jobs/registry', () => ({
+  runDueJobs: vi.fn(async () => ({
+    skipped: false,
+    jobs: [{ name: 'transfers.release', ok: true, released: 2 }],
+  })),
+}));
+
 const { POST } = await import('./route');
+const { runDueJobs } = await import('@/server/jobs/registry');
 
 const SECRET = 'a-long-enough-cron-secret-value';
 
@@ -20,11 +29,23 @@ describe('POST /api/internal/jobs/run', () => {
     resetEnvCache();
   });
 
-  it('runs when the secret is correct', async () => {
+  it('runs the registry and reports every job', async () => {
     const response = await POST(call({ authorization: `Bearer ${SECRET}` }));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ran: 0 });
+    expect(await response.json()).toEqual({
+      ran: 1,
+      skipped: false,
+      jobs: [{ name: 'transfers.release', ok: true, released: 2 }],
+    });
+  });
+
+  it('says so when another instance holds the run lock', async () => {
+    vi.mocked(runDueJobs).mockResolvedValueOnce({ skipped: true, jobs: [] });
+
+    const response = await POST(call({ authorization: `Bearer ${SECRET}` }));
+
+    expect(await response.json()).toEqual({ ran: 0, skipped: true, jobs: [] });
   });
 
   it('rejects a missing secret header', async () => {

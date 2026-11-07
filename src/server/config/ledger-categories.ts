@@ -23,6 +23,9 @@ export const LEDGER_CATEGORIES = [
   'licence',
   'leakage',
   'escrow_hold',
+  // A pending transfer the sender cancelled: the hold goes back, so it is neither a
+  // release to the receiver nor a reversal of a completed posting.
+  'escrow_refund',
   'escrow_release',
   'property_purchase',
   'reversal',
