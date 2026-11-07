@@ -102,6 +102,49 @@ curl -X POST http://localhost:3000/api/auth/request-code -H 'content-type: appli
 
 The code appears as `[dev email] Your Street Boys code -> you@example.com: 123456`. The `origin` header is required: the guard refuses a request without one.
 
+The same flow through the pages, which is what a player sees:
+
+1. Open `http://localhost:3000`. The landing page says what the game is and sends you into sign-in.
+2. Enter an email on `/login`. The terminal prints the code.
+3. Type the six digits. A new address then asks for the terms checkbox and the age band, on the same page, and signs you up with the same code.
+4. `/create-character` takes a name and three avatar options, and `/home` shows the character with `Balance: coming soon`.
+
+Sign out from `/home`; it posts to `/api/auth/logout` and returns to the landing page.
+
+### Pages and routes
+
+| Page                   | Who sees it                                                              |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `/`                    | Everyone, indexable. `Play` goes to `/login`, or `/home` when signed in. |
+| `/login`               | Signed out, or signed in without a character. `noindex`.                 |
+| `/create-character`    | Signed in without a character. `noindex`.                                |
+| `/home`                | Signed in with a character. `noindex`.                                   |
+| `/terms`, `/privacy`   | Placeholders that say they are drafts. `noindex`.                        |
+| `/account-unavailable` | A frozen or banned account, with no reason given. `noindex`.             |
+
+| Route                         | What it does                                                         |
+| ----------------------------- | -------------------------------------------------------------------- |
+| `POST /api/auth/request-code` | Sends a code. Always `{ "status": "sent" }` for an accepted address. |
+| `POST /api/auth/verify-code`  | Signs in, or returns `details_required`, or creates the account.     |
+| `POST /api/auth/logout`       | Revokes the session. Safe to repeat.                                 |
+| `GET /api/me`                 | The player, including their character, or 401.                       |
+| `POST /api/character`         | Creates the one character an account may have. 201, then 409.        |
+
+Access is gated in the page's own server component (`src/server/accounts/require-user.ts`), never in middleware: the app must run on any Node host, and an Edge runtime would tie it to one platform.
+
+No player-facing string lives in a component. They are all in `src/app/copy.ts`, so a Pidgin or Yoruba pass is a translation of one file.
+
+## First deploy checklist
+
+Before the first deploy is called done:
+
+1. **Env vars set** on the platform: `DATABASE_URL`, `OTP_PEPPER`, `IP_HASH_PEPPER`, `APP_ORIGIN`, `EMAIL_PROVIDER=brevo`, `BREVO_API_KEY`, `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`. Boot fails on a missing or short value, and it refuses `EMAIL_PROVIDER=console` in production, which is deliberate: a deploy that cannot send codes should not start.
+2. **Migrations applied** as a pre-deploy step: `npm run db:migrate`. Never at startup.
+3. **A test sign-in** with a real address, on the deployed domain. The cookie must be `__Host-sb_session`, `Secure` and `HttpOnly`.
+4. **A test email to Gmail, Outlook and Yahoo**, each checked for landing in spam rather than the inbox. Deliverability differs by provider and only a real send tells you.
+5. **`APP_ORIGIN` matches the deployed domain**, or the origin guard refuses every sign-in with 403.
+6. **A character created and a sign-out**, to prove the session, the character route and the gate all read the same database.
+
 ## Environment variables
 
 Names only in the repository; values only in the platform's environment settings or in a gitignored `.env.local`. `.env.example` documents every name.
@@ -265,7 +308,19 @@ The audience is a cheap Android phone on a slow Nigerian connection, so weight i
 | Fonts                     | system fonts only (no webfont download)      |
 | Above-the-fold layout     | no shift, no heavy asset before it is needed |
 
-**Measured today** (production build, gzipped, every script on `/`): **170 KB**. The empty application already sits about **20 KB over the 150 KB target**, before a single game screen exists, because the Next.js 16 and React 19 runtime is the floor. That gap is a real problem to solve in a later prompt (fewer client components, check what Next ships by default, or accept a higher ceiling). It is written down here rather than discovered at launch.
+**Measured today** (production build, gzipped, every script the page loads):
+
+| Page                                              | First-load JavaScript |
+| ------------------------------------------------- | --------------------- |
+| `/login`                                          | **190 KB**            |
+| `/create-character`                               | **187 KB**            |
+| `/home`                                           | **186 KB**            |
+| `/`, `/terms`, `/privacy`, `/account-unavailable` | **176 KB**            |
+
+The floor is the problem, not the pages: an empty App Router page with no client code of its own already loads **175.9 KB**, of which three chunks account for 153 KB (React DOM, the React client runtime and the Next.js runtime). The pages in this feature add 10 to 15 KB each on top of that, and the 175 KB ceiling in the prompt cannot be met by this stack as configured.
+
+That is a decision for the owner, not something to hide in a table. Either the ceiling moves to about 200 KB for the signed-in pages, or the framework question (fewer client components, a lighter router) is opened properly. It is listed in the pull request as an open question.
+It is written down here rather than discovered at launch.
 
 If a dependency or an asset cannot fit the budget, say so in the pull request instead of shipping it quietly.
 
@@ -274,7 +329,9 @@ If a dependency or an asset cannot fit the budget, say so in the pull request in
 | Path                 | What it is                                                    |
 | -------------------- | ------------------------------------------------------------- |
 | `src/app`            | Pages and routes (App Router)                                 |
-| `src/app/api`        | HTTP routes, starting with `/api/health`                      |
+| `src/app/api`        | HTTP routes: health, ready, auth, me, character               |
+| `src/app/copy.ts`    | Every string a player reads, in one file                      |
+| `src/shared`         | Static non-secret data the client may import (avatar ids)     |
 | `src/server/db`      | Drizzle client, schema, migrations                            |
 | `src/server/ledger`  | Reserved: the only place that may ever change a balance       |
 | `src/server/pricing` | Reserved: the shared `base × COLI` pricing function           |
