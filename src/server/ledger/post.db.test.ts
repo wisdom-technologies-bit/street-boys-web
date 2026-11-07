@@ -95,7 +95,7 @@ describe('postTransaction: the happy paths', () => {
     await mintTo(player, 4000n);
 
     await postTransaction({
-      idempotencyKey: 'food-1',
+      idempotencyKey: 'food-0001',
       category: 'food',
       entries: [
         { accountId: player, amountKobo: -1200n },
@@ -112,7 +112,7 @@ describe('postTransaction: the happy paths', () => {
     await mintTo(player, 5000n);
 
     await postTransaction({
-      idempotencyKey: 'tax-1',
+      idempotencyKey: 'tax-0001',
       category: 'tax',
       metadata: { taxPeriod: '2026-11', zone: 'zone-3' },
       entries: [
@@ -150,7 +150,7 @@ describe('postTransaction: refused before the database is touched', () => {
 
     await expect(
       postTransaction({
-        idempotencyKey: 'zero-1',
+        idempotencyKey: 'zero-0001',
         category: 'transfer',
         entries: [
           { accountId: player, amountKobo: 0n },
@@ -161,7 +161,7 @@ describe('postTransaction: refused before the database is touched', () => {
 
     await expect(
       postTransaction({
-        idempotencyKey: 'dup-1',
+        idempotencyKey: 'dup-00001',
         category: 'transfer',
         entries: [
           { accountId: player, amountKobo: -100n },
@@ -201,7 +201,7 @@ describe('postTransaction: refused before the database is touched', () => {
 
     await expect(
       postTransaction({
-        idempotencyKey: 'cap-1',
+        idempotencyKey: 'cap-00001',
         category: 'transfer',
         entries: [
           { accountId: rich, amountKobo: -(MAX_TX_KOBO + 1n) },
@@ -326,6 +326,42 @@ describe('postTransaction: idempotency', () => {
     expect(rows[0]?.count).toBe('2');
   });
 
+  it('replays when only the metadata differs: metadata is not part of the intent', async () => {
+    const from = await createTestPlayerAccount('meta-from');
+    const to = await createTestPlayerAccount('meta-to');
+    await mintTo(from, 5000n);
+
+    const first = await postTransaction({
+      idempotencyKey: 'meta-replay-1',
+      category: 'transfer',
+      metadata: { note: 'first' },
+      entries: [
+        { accountId: from, amountKobo: -500n },
+        { accountId: to, amountKobo: 500n },
+      ],
+    });
+
+    const second = await postTransaction({
+      idempotencyKey: 'meta-replay-1',
+      category: 'transfer',
+      metadata: { note: 'second' },
+      entries: [
+        { accountId: from, amountKobo: -500n },
+        { accountId: to, amountKobo: 500n },
+      ],
+    });
+
+    expect(second.replayed).toBe(true);
+    expect(second.transactionId).toBe(first.transactionId);
+    expect(await balanceOf(to)).toBe(500n);
+
+    const stored = await getPool().query<{ metadata: { note: string } }>(
+      'select metadata from ledger_transactions where id = $1',
+      [first.transactionId],
+    );
+    expect(stored.rows[0]?.metadata.note).toBe('first');
+  });
+
   it('throws IdempotencyConflict when the key is reused for a different payload', async () => {
     const from = await createTestPlayerAccount('conflict-from');
     const to = await createTestPlayerAccount('conflict-to');
@@ -366,7 +402,7 @@ describe('postTransaction: concurrency', () => {
 
     const results = await Promise.allSettled([
       postTransaction({
-        idempotencyKey: 'a-to-b',
+        idempotencyKey: 'a-to-b-0001',
         category: 'transfer',
         entries: [
           { accountId: a, amountKobo: -1000n },
@@ -374,7 +410,7 @@ describe('postTransaction: concurrency', () => {
         ],
       }),
       postTransaction({
-        idempotencyKey: 'b-to-a',
+        idempotencyKey: 'b-to-a-0001',
         category: 'transfer',
         entries: [
           { accountId: b, amountKobo: -2500n },

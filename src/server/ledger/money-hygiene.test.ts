@@ -37,6 +37,10 @@ describe('no float arithmetic in the ledger', () => {
       for (const [index, line] of source.split('\n').entries()) {
         // The formatter is the one place a division by 100 is correct, and it uses
         // integer division on bigint, so it does not match these patterns anyway.
+        // A line that says "not money" is a count or a length being converted,
+        // never an amount; saying so in the code is the price of the exemption.
+        if (/not money/.test(line)) continue;
+
         for (const rule of FORBIDDEN) {
           if (rule.pattern.test(line)) {
             offenders.push(`${relative(MODULE_DIR, path)}:${index + 1} ${rule.why}`);

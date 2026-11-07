@@ -16,7 +16,9 @@
     "format:check": "prettier --check .",
     "test:ui": "vitest run --config vitest.ui.config.ts",
     "build:migrate": "esbuild scripts/migrate.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/migrate.mjs --external:pg-native --log-level=warning --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\"",
-    "db:migrate:prod": "node dist/migrate.mjs"
+    "db:migrate:prod": "node dist/migrate.mjs",
+    "ledger:verify": "esbuild scripts/ledger-verify.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/ledger-verify.mjs --external:pg-native --log-level=warning --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\" && node dist/ledger-verify.mjs",
+    "test:ledger-stress": "LEDGER_STRESS=1 vitest run --config vitest.db.config.ts src/server/ledger/stress.db.test.ts"
   },
   "repository": "https://github.com/wisdom-technologies-bit/street-boys-web",
   "bugs": {

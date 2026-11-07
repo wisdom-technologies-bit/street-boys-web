@@ -26,16 +26,37 @@ export {
   getAccountByCode,
   getBalance,
   getPlayerAccount,
+  getReversingTransaction,
   getTransaction,
   listEntries,
   setAccountFrozen,
 } from './read';
 export type { Account, LedgerEntry, Transaction } from './read';
 
+export { getFlowsByCategory, getMoneySupply, windowStart } from './reports';
+export type { AccountCounts, FlowRow, MoneySupply } from './reports';
+
+export { summarizeReport, verifyLedger } from './verify';
+export type { VerifyCheck, VerifyFailure, VerifyReport } from './verify';
+
+export {
+  assertIdempotencyKey,
+  buildIdempotencyKey,
+  IDEMPOTENCY_KEY_MAX_LENGTH,
+  IDEMPOTENCY_KEY_MIN_LENGTH,
+  isValidIdempotencyKey,
+} from './idempotency';
+
+export { reverseTransaction, REVERSAL_REASON_MAX_LENGTH } from './reverse';
+export type { ReverseTransactionInput } from './reverse';
+
 export {
   AccountFrozen,
   AccountNotFound,
+  AlreadyReversed,
   IdempotencyConflict,
+  InsufficientFundsForReversal,
+  UnknownTransaction,
   InsufficientFunds,
   LedgerError,
   LedgerValidationError,

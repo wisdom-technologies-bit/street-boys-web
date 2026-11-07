@@ -25,7 +25,10 @@ export class LedgerValidationError extends LedgerError {
       | 'too_many_entries'
       | 'too_few_entries'
       | 'amount_too_large'
-      | 'unsafe_metadata',
+      | 'unsafe_metadata'
+      | 'invalid_idempotency_key'
+      | 'invalid_reversal'
+      | 'already_reversed',
   ) {
     super(message);
   }
@@ -56,5 +59,36 @@ export class InsufficientFunds extends LedgerError {
 export class AccountNotFound extends LedgerError {
   constructor(readonly accountId: string) {
     super('this account does not exist');
+  }
+}
+
+/** The transaction being reversed does not exist. */
+export class UnknownTransaction extends LedgerError {
+  constructor(readonly transactionId: string) {
+    super('this transaction does not exist');
+  }
+}
+
+/** This transaction has already been reversed. A transaction is reversed once. */
+export class AlreadyReversed extends LedgerError {
+  constructor(readonly transactionId: string) {
+    super('this transaction has already been reversed');
+  }
+}
+
+/**
+ * A reversal would take an account below zero.
+ *
+ * Its own type, because the answer is different from an ordinary refusal: the
+ * money has already been spent, so the caller has to decide what to do about the
+ * shortfall (a partial clawback, a debt, writing it off). The ledger refuses to
+ * guess, and nothing at all is written.
+ */
+export class InsufficientFundsForReversal extends LedgerError {
+  constructor(
+    readonly accountId: string,
+    readonly transactionId: string,
+  ) {
+    super('reversing this transaction would take an account below zero');
   }
 }
