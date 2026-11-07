@@ -169,11 +169,13 @@ async function sendOnce(
       throw new TransferError('invalid_request', 'you cannot send money to yourself');
     }
 
-    // Both users locked in id order: A to B and B to A at the same time queue
-    // instead of deadlocking, the same rule the ledger uses for balances.
-    await client.query('select id from users where id = any($1::uuid[]) order by id for update', [
-      [sender.id, receiver.id],
-    ]);
+    // Both users locked one at a time in id order: A to B and B to A at the same
+    // instant then queue instead of deadlocking, the same rule the ledger uses for
+    // balances. One statement with `any(...) order by` is not enough: the planner may
+    // lock rows in the order it reads them, not the order it sorts them.
+    for (const userId of [sender.id, receiver.id].sort()) {
+      await client.query('select id from users where id = $1 for update', [userId]);
+    }
 
     const replay = await findReplay(client, request, receiver);
     if (replay) {
